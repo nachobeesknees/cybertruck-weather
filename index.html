@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Cybertruck Wx</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{--bg:#0b0d10;--panel:#14181d;--line:#262c33;--txt:#e8edf2;--dim:#8a96a3;--acc:#3fa9ff}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:20px/1.3 -apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#app{display:grid;grid-template-rows:auto auto 1fr;height:100vh}
+#brief{padding:12px 18px;background:#1a1410;border-bottom:2px solid #ff8c1a;font-size:21px;max-height:22vh;overflow:auto}
+#brief b{color:#ffb35c}
+#alerts{display:flex;gap:10px;padding:8px 12px;overflow-x:auto;background:var(--panel)}
+.al{flex:0 0 auto;padding:10px 16px;border-radius:12px;font-weight:700;font-size:20px;cursor:pointer;min-height:56px;display:flex;align-items:center}
+.Extreme{background:#c0002b}.Severe{background:#e2561b}.Moderate{background:#d9a400;color:#111}.Minor{background:#2f6fb5}.Unknown{background:#555}
+#main{display:grid;grid-template-columns:1fr 340px;min-height:0}
+#mapwrap{position:relative}#map{position:absolute;inset:0}
+#side{background:var(--panel);border-left:1px solid var(--line);padding:14px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.big{font-size:72px;font-weight:300;line-height:1}.row{display:flex;justify-content:space-between;font-size:22px;padding:4px 0;border-bottom:1px solid var(--line)}.row span:first-child{color:var(--dim)}
+h3{margin:4px 0;font-size:18px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+#hourly{display:flex;gap:4px;align-items:flex-end;height:110px}#hourly div{flex:1;background:var(--acc);border-radius:4px 4px 0 0;position:relative;min-height:2px}
+#hourly div i{position:absolute;bottom:-22px;left:0;right:0;text-align:center;font-size:13px;color:var(--dim);font-style:normal}
+#ctrl{position:absolute;top:12px;left:12px;z-index:1000;display:flex;flex-wrap:wrap;gap:8px;max-width:75%}
+button{background:#1d232a;color:var(--txt);border:2px solid var(--line);border-radius:14px;font-size:19px;padding:0 18px;min-height:60px;min-width:60px;font-weight:600}
+button.on{border-color:var(--acc);background:#16324a}
+#time{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:1000;background:#000c;padding:8px 18px;border-radius:12px;font-size:22px;font-weight:700}
+#veh{font-size:20px}.leaflet-control-zoom a{width:56px!important;height:56px!important;line-height:56px!important;font-size:28px!important}
+.wind{color:#9fe3ff;font-size:26px;text-shadow:0 0 4px #000;font-weight:900}
+#modal{display:none;position:fixed;inset:5%;z-index:3000;background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:20px;overflow:auto;font-size:20px;white-space:pre-wrap}
+@media (max-width:900px){#main{grid-template-columns:1fr}#side{display:none}}
+</style></head><body>
+<div id="app">
+ <div id="brief"><b>Briefing:</b> loading…</div>
+ <div id="alerts"></div>
+ <div id="main">
+  <div id="mapwrap"><div id="map"></div>
+   <div id="ctrl">
+    <button id="bPlay" class="on">⏸</button>
+    <button id="bSrc">Radar: RainViewer</button>
+    <button id="bSat">Satellite</button>
+    <button id="bWind">Wind</button>
+    <button id="bSW">Southwest</button>
+    <button id="bHome">⌖ Home</button>
+    <button id="bFs">⛶</button>
+   </div>
+   <div id="time">—</div>
+  </div>
+  <div id="side">
+   <div><h3>Now · Scottsdale</h3><div class="big" id="t">--°</div><div id="fl" style="color:var(--dim)">Feels like --°</div></div>
+   <div><div class="row"><span>Humidity</span><span id="rh">--</span></div><div class="row"><span>Wind</span><span id="ws">--</span></div><div class="row"><span>Gusts</span><span id="wg">--</span></div><div class="row"><span>Pressure</span><span id="pr">--</span></div></div>
+   <div><h3>Rain chance · next 12 h</h3><div id="hourly"></div></div>
+   <div style="margin-top:20px"><h3>Vehicle</h3><div id="veh">Waiting for location…</div></div>
+   <div style="color:var(--dim);font-size:15px" id="upd"></div>
+  </div>
+ </div>
+</div>
+<div id="modal"></div>
+<script>
+// ===== SETTINGS: change these to move the dashboard =====
+const HOME={lat:33.53,lon:-111.93,name:"Scottsdale 85253"};   // map center + conditions
+const ALERT_POINT="33.45,-112.07";                               // NWS alerts lookup point
+const SW_VIEW={center:[34.5,-111.5],zoom:6};                     // Southwest view
+const RADAR_MS=5*60e3, ALERT_MS=10*60e3, WX_MS=10*60e3;
+// =========================================================
+const $=id=>document.getElementById(id);
+const map=L.map('map',{zoomControl:true,attributionControl:true}).setView([HOME.lat,HOME.lon],9);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}).addTo(map);
+map.createPane('alerts');map.getPane('alerts').style.zIndex=450;
+map.createPane('spc');map.getPane('spc').style.zIndex=420;
+
+// ---- Radar (RainViewer / LibreWXR) ----
+const SRC={rv:{name:'RainViewer',url:'https://api.rainviewer.com/public/weather-maps.json',sfx:'/256/{z}/{x}/{y}/2/1_1.png',max:7},
+           lx:{name:'LibreWXR',url:'https://api.librewxr.net/public/weather-maps.json',sfx:'/256/{z}/{x}/{y}/2/1_1.png',max:12}};
+let src='rv',frames=[],layers=[],idx=0,playing=true,timer=null,satLayer=null,satOn=false,meta=null;
+async function loadRadar(){
+  try{
+    const r=await fetch(SRC[src].url,{cache:'no-store'});meta=await r.json();
+    layers.forEach(l=>map.removeLayer(l));layers=[];
+    const past=meta.radar.past||[],now=meta.radar.nowcast||[];
+    frames=[...past.map(f=>({...f,nc:false})),...now.map(f=>({...f,nc:true}))];
+    layers=frames.map(f=>L.tileLayer(meta.host+f.path+SRC[src].sfx,{opacity:0,maxNativeZoom:SRC[src].max,maxZoom:19,zIndex:300}).addTo(map));
+    idx=past.length-1;show(idx);if(satOn)loadSat();
+  }catch(e){$('time').textContent='Radar unavailable';}
+}
+function show(i){layers.forEach((l,j)=>l.setOpacity(j===i?0.75:0));const f=frames[i];if(!f)return;
+  $('time').textContent=(f.nc?'Forecast ':'')+new Date(f.time*1000).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+' · '+SRC[src].name;}
+function tick(){if(!frames.length)return;idx=(idx+1)%frames.length;show(idx);}
+function play(on){playing=on;clearInterval(timer);if(on)timer=setInterval(tick,700);$('bPlay').textContent=on?'⏸':'▶';$('bPlay').classList.toggle('on',on);}
+$('bPlay').onclick=()=>play(!playing);
+$('bSrc').onclick=()=>{src=src==='rv'?'lx':'rv';$('bSrc').textContent='Radar: '+SRC[src].name;loadRadar();};
+
+// ---- GOES satellite (LibreWXR) ----
+// LibreWXR's feed currently lists infrared frames; if a "visible" list appears it's used in daytime.
+async function loadSat(){
+  if(satLayer){map.removeLayer(satLayer);satLayer=null;}
+  let m=meta&&meta.satellite?meta:await (await fetch(SRC.lx.url,{cache:'no-store'})).json();
+  const h=new Date().getHours(),day=h>=7&&h<18,s=m.satellite||{};
+  const list=(day&&s.visible&&s.visible.length?s.visible:s.infrared)||[];
+  if(!list.length)return;const f=list[list.length-1];
+  satLayer=L.tileLayer('https://api.librewxr.net'+f.path+'/256/{z}/{x}/{y}/0/0_0.png',{opacity:.55,zIndex:200,maxNativeZoom:8,maxZoom:19}).addTo(map);
+}
+$('bSat').onclick=()=>{satOn=!satOn;$('bSat').classList.toggle('on',satOn);satOn?loadSat():(satLayer&&map.removeLayer(satLayer),satLayer=null);};
+
+// ---- Wind arrows from Open-Meteo grid ----
+let windLayer=null,windOn=false;
+async function loadWind(){
+  const b=map.getBounds(),n=5,lats=[],lons=[];
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){lats.push((b.getSouth()+(i+.5)*(b.getNorth()-b.getSouth())/n).toFixed(2));lons.push((b.getWest()+(j+.5)*(b.getEast()-b.getWest())/n).toFixed(2));}
+  try{const d=await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=mph`)).json();
+    const arr=Array.isArray(d)?d:[d];if(windLayer)map.removeLayer(windLayer);windLayer=L.layerGroup();
+    arr.forEach(p=>{const c=p.current,rot=(c.wind_direction_10m+180)%360;
+      windLayer.addLayer(L.marker([p.latitude,p.longitude],{interactive:false,icon:L.divIcon({className:'',html:`<div class="wind" style="transform:rotate(${rot}deg)">↑</div><div style="font-size:15px;color:#cfefff;text-shadow:0 0 3px #000">${Math.round(c.wind_speed_10m)}g${Math.round(c.wind_gusts_10m)}</div>`,iconSize:[60,50]})}));});
+    if(windOn)windLayer.addTo(map);}catch(e){}
+}
+$('bWind').onclick=()=>{windOn=!windOn;$('bWind').classList.toggle('on',windOn);if(windOn)loadWind();else if(windLayer)map.removeLayer(windLayer);};
+map.on('moveend',()=>{if(windOn)loadWind();});
+
+// ---- Southwest view + SPC Day 1 outlook ----
+let spcLayer=null,swOn=false;
+const SPC_COL={TSTM:'#c1e9c1',MRGL:'#66a366',SLGT:'#f6f67f',ENH:'#e6c27a',MDT:'#e67f7f',HIGH:'#ff66ff'};
+async function loadSPC(){
+  try{const g=await (await fetch('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.lyr.geojson',{cache:'no-store'})).json();
+    if(spcLayer)map.removeLayer(spcLayer);
+    spcLayer=L.geoJSON(g,{pane:'spc',style:f=>({color:f.properties.stroke||SPC_COL[f.properties.LABEL]||'#888',fillColor:f.properties.fill||SPC_COL[f.properties.LABEL]||'#888',fillOpacity:.18,weight:2})}).bindTooltip(l=>'SPC: '+(l.feature.properties.LABEL2||l.feature.properties.LABEL));
+    if(swOn)spcLayer.addTo(map);}catch(e){/* SPC unreachable (CORS/offline): wide radar view still works */}
+}
+$('bSW').onclick=()=>{swOn=!swOn;$('bSW').classList.toggle('on',swOn);
+  if(swOn){map.setView(SW_VIEW.center,SW_VIEW.zoom);loadSPC();}else{spcLayer&&map.removeLayer(spcLayer);map.setView([HOME.lat,HOME.lon],9);}};
+$('bHome').onclick=()=>map.setView([HOME.lat,HOME.lon],9);
+$('bFs').onclick=()=>{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();};
+
+// ---- NWS alerts + briefing ----
+let alertPolys=null;const SEV=['Extreme','Severe','Moderate','Minor','Unknown'];
+async function loadAlerts(){
+  try{const d=await (await fetch('https://api.weather.gov/alerts/active?point='+ALERT_POINT,{headers:{Accept:'application/geo+json'},cache:'no-store'})).json();
+    const fs=(d.features||[]).sort((a,b)=>SEV.indexOf(a.properties.severity)-SEV.indexOf(b.properties.severity));
+    const box=$('alerts');box.innerHTML='';
+    if(!fs.length)box.innerHTML='<div class="al Minor">No active NWS alerts</div>';
+    fs.forEach(f=>{const p=f.properties,el=document.createElement('div');el.className='al '+(SEV.includes(p.severity)?p.severity:'Unknown');
+      el.textContent=p.event+' · until '+new Date(p.ends||p.expires).toLocaleTimeString([],{weekday:'short',hour:'numeric',minute:'2-digit'});
+      el.onclick=()=>{const m=$('modal');m.textContent=p.headline+'\n\n'+p.description+'\n\n'+(p.instruction||'')+'\n\n(tap to close)';m.style.display='block';};box.appendChild(el);});
+    if(alertPolys)map.removeLayer(alertPolys);
+    alertPolys=L.geoJSON({type:'FeatureCollection',features:fs.filter(f=>f.geometry)},{pane:'alerts',style:f=>({color:{Extreme:'#ff1f4f',Severe:'#ff7a33',Moderate:'#ffd21f',Minor:'#4fa3ff'}[f.properties.severity]||'#aaa',weight:3,fillOpacity:.08})}).addTo(map);
+    // Briefing: lead lines of the top alerts' descriptions
+    const pts=fs.slice(0,3).map(f=>{const s=(f.properties.description||'').replace(/\n/g,' ').match(/\*\s*WHAT\.\.\.([^*]+)/);return '<b>'+f.properties.event+':</b> '+(s?s[1].trim():f.properties.headline);});
+    $('brief').innerHTML=pts.length?pts.join('<br>'):'<b>Briefing:</b> No active watches or warnings for the metro right now.';
+  }catch(e){$('brief').innerHTML='<b>Briefing:</b> NWS alerts unavailable — check connection.';}
+}
+$('modal').onclick=()=>$('modal').style.display='none';
+
+// ---- Open-Meteo current conditions ----
+async function loadWx(){
+  try{const d=await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${HOME.lat}&longitude=${HOME.lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure&hourly=precipitation_probability&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America/Phoenix&forecast_hours=12`)).json();
+    const c=d.current,dirs=['N','NE','E','SE','S','SW','W','NW'];
+    $('t').textContent=Math.round(c.temperature_2m)+'°';$('fl').textContent='Feels like '+Math.round(c.apparent_temperature)+'°';
+    $('rh').textContent=c.relative_humidity_2m+'%';$('ws').textContent=dirs[Math.round(c.wind_direction_10m/45)%8]+' '+Math.round(c.wind_speed_10m)+' mph';
+    $('wg').textContent=Math.round(c.wind_gusts_10m)+' mph';$('pr').textContent=(c.surface_pressure*0.02953).toFixed(2)+' inHg';
+    const h=$('hourly');h.innerHTML='';d.hourly.precipitation_probability.slice(0,12).forEach((p,i)=>{const b=document.createElement('div');b.style.height=Math.max(p,2)+'%';b.title=p+'%';b.innerHTML='<i>'+new Date(d.hourly.time[i]).toLocaleTimeString([],{hour:'numeric'}).replace(' ','')+'</i>';h.appendChild(b);});
+    $('upd').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  }catch(e){$('upd').textContent='Conditions unavailable';}
+}
+
+// ---- Vehicle hooks (best effort: browser Geolocation only; Tesla exposes no web SDK) ----
+let me=null;
+if(navigator.geolocation){navigator.geolocation.watchPosition(p=>{const {latitude:a,longitude:o,speed:s,heading:h}=p.coords;
+  if(!me)me=L.circleMarker([a,o],{radius:10,color:'#fff',fillColor:'#3fa9ff',fillOpacity:1,weight:3}).addTo(map);else me.setLatLng([a,o]);
+  $('veh').innerHTML='Speed: '+(s!=null?Math.round(s*2.237)+' mph':'n/a')+'<br>Heading: '+(h!=null&&!isNaN(h)?Math.round(h)+'°':'n/a')+'<br><span style="color:var(--dim);font-size:15px">Route: not exposed to the browser</span>';
+ },()=>{$('veh').innerHTML='Location not shared.<br><span style="color:var(--dim);font-size:15px">Speed/route: not exposed to the browser</span>';},{enableHighAccuracy:true,maximumAge:5000});}
+else $('veh').textContent='No vehicle data available';
+
+// ---- Start + refresh ----
+loadRadar();play(true);loadAlerts();loadWx();
+setInterval(loadRadar,RADAR_MS);setInterval(loadAlerts,ALERT_MS);setInterval(loadWx,WX_MS);
+setInterval(()=>{if(windOn)loadWind();if(swOn)loadSPC();},RADAR_MS);
+</script></body></html>
