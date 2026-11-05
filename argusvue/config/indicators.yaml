@@ -1,0 +1,76 @@
+# Indicators. `regions` lists where the series is expected; '*' = national context.
+# half_life_days: how fast a point's claim confidence decays (SPEC §6). direction_good: up|down|neutral.
+indicators:
+  # --- Zillow ---------------------------------------------------------------------------------
+  zhvi:               {name: "Zillow Home Value Index (typical home, smoothed, SA)", unit: USD, direction_good: neutral, half_life_days: 45, source: zillow, frequency: monthly, regions: [phx, jh]}
+  zori_rent:          {name: "Zillow Observed Rent Index (smoothed)", unit: USD, direction_good: neutral, half_life_days: 45, source: zillow, frequency: monthly, regions: [phx, jh]}
+  zillow_inventory:   {name: "Zillow for-sale inventory (smoothed)", unit: listings, direction_good: neutral, half_life_days: 30, source: zillow, frequency: monthly, regions: [phx, jh]}
+  price_cut_share:    {name: "Share of listings with a price cut (Zillow)", unit: pct, direction_good: down, half_life_days: 30, source: zillow, frequency: monthly, regions: [phx, jh]}
+  days_to_pending:    {name: "Mean days to pending (Zillow)", unit: days, direction_good: down, half_life_days: 30, source: zillow, frequency: monthly, regions: [phx, jh]}
+  # --- Redfin ---------------------------------------------------------------------------------
+  median_sale_price:  {name: "Median sale price, not seasonally adjusted (Redfin)", unit: USD, direction_good: neutral, half_life_days: 45, source: redfin, frequency: monthly, regions: [phx, jh]}
+  median_dom:         {name: "Median days on market (Redfin)", unit: days, direction_good: down, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  active_inventory:   {name: "Active inventory at period end (Redfin)", unit: listings, direction_good: neutral, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  months_of_supply:   {name: "Months of supply (Redfin)", unit: months, direction_good: neutral, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  new_listings:       {name: "New listings (Redfin)", unit: listings, direction_good: neutral, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  homes_sold:         {name: "Homes sold (Redfin)", unit: sales, direction_good: up, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  sale_to_list:       {name: "Average sale-to-list ratio (Redfin)", unit: pct, direction_good: up, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  share_sold_above_list: {name: "Share of homes sold above original list (Redfin)", unit: pct, direction_good: up, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  pct_off_market_2w:  {name: "Share of listings off market within two weeks (Redfin)", unit: pct, direction_good: up, half_life_days: 30, source: redfin, frequency: monthly, regions: [phx, jh]}
+  # --- Apartment List -------------------------------------------------------------------------
+  aptlist_rent_overall: {name: "Apartment List rent estimate, all bedrooms", unit: USD, direction_good: neutral, half_life_days: 45, source: apartment_list, frequency: monthly, regions: [phx]}
+  aptlist_rent_1br:   {name: "Apartment List rent estimate, 1 bedroom", unit: USD, direction_good: neutral, half_life_days: 45, source: apartment_list, frequency: monthly, regions: [phx]}
+  aptlist_rent_2br:   {name: "Apartment List rent estimate, 2 bedroom", unit: USD, direction_good: neutral, half_life_days: 45, source: apartment_list, frequency: monthly, regions: [phx]}
+  # --- National context ------------------------------------------------------------------------
+  mortgage_rate_30y:  {name: "30-year fixed mortgage rate (Freddie Mac PMMS)", unit: pct, direction_good: down, half_life_days: 14, source: freddie_mac, frequency: weekly, regions: ['*']}
+  # --- Migration (IRS SOI; net values are derived downstream) ---------------------------------
+  migration_inflow_returns:      {name: "Inbound migration, tax returns (IRS SOI, US and foreign)", unit: returns, direction_good: up, half_life_days: 365, source: irs_soi, frequency: annual, regions: [phx, jh]}
+  migration_outflow_returns:     {name: "Outbound migration, tax returns (IRS SOI, US and foreign)", unit: returns, direction_good: down, half_life_days: 365, source: irs_soi, frequency: annual, regions: [phx, jh]}
+  migration_inflow_individuals:  {name: "Inbound migration, individuals (IRS SOI exemptions)", unit: people, direction_good: up, half_life_days: 365, source: irs_soi, frequency: annual, regions: [phx, jh]}
+  migration_outflow_individuals: {name: "Outbound migration, individuals (IRS SOI exemptions)", unit: people, direction_good: down, half_life_days: 365, source: irs_soi, frequency: annual, regions: [phx, jh]}
+  migration_inflow_agi:          {name: "Inbound migration, adjusted gross income (IRS SOI, thousands USD)", unit: thousand_usd, direction_good: up, half_life_days: 365, source: irs_soi, frequency: annual, regions: [phx, jh]}
+  migration_outflow_agi:         {name: "Outbound migration, adjusted gross income (IRS SOI, thousands USD)", unit: thousand_usd, direction_good: down, half_life_days: 365, source: irs_soi, frequency: annual, regions: [phx, jh]}
+  # --- Labor market (BLS via FRED) ------------------------------------------------------------
+  unemployment_rate:  {name: "Unemployment rate, not seasonally adjusted (BLS LAUS via FRED)", unit: pct, direction_good: down, half_life_days: 60, source: fred, frequency: monthly, regions: [phx, jh]}
+  nonfarm_jobs_total: {name: "Total nonfarm employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_construction:  {name: "Construction employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_manufacturing: {name: "Manufacturing employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_leisure_hospitality: {name: "Leisure and hospitality employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_prof_business: {name: "Professional and business services employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_education_health: {name: "Education and health services employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_financial:     {name: "Financial activities employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_trade_transport_utilities: {name: "Trade, transportation and utilities employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_government:    {name: "Government employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  nonfarm_jobs_information:   {name: "Information employment, NSA (BLS CES via FRED)", unit: thousand_jobs, direction_good: up, half_life_days: 60, source: fred, frequency: monthly, regions: [phx]}
+  # --- Employment and wages (QCEW) ------------------------------------------------------------
+  qcew_employment_total:        {name: "QCEW monthly employment, all covered industries", unit: jobs, direction_good: up, half_life_days: 90, source: bls_qcew, frequency: monthly, regions: [phx, jh]}
+  qcew_employment_construction: {name: "QCEW monthly employment, private construction (NAICS 23)", unit: jobs, direction_good: up, half_life_days: 90, source: bls_qcew, frequency: monthly, regions: [phx, jh]}
+  qcew_employment_manufacturing: {name: "QCEW monthly employment, private manufacturing (NAICS 31-33)", unit: jobs, direction_good: up, half_life_days: 90, source: bls_qcew, frequency: monthly, regions: [phx, jh]}
+  qcew_employment_real_estate:  {name: "QCEW monthly employment, private real estate and rental (NAICS 53)", unit: jobs, direction_good: up, half_life_days: 90, source: bls_qcew, frequency: monthly, regions: [phx, jh]}
+  qcew_employment_accommodation_food: {name: "QCEW monthly employment, private accommodation and food services (NAICS 72)", unit: jobs, direction_good: up, half_life_days: 90, source: bls_qcew, frequency: monthly, regions: [phx, jh]}
+  qcew_avg_weekly_wage:         {name: "QCEW average weekly wage, all covered industries", unit: USD, direction_good: up, half_life_days: 90, source: bls_qcew, frequency: quarterly, regions: [phx, jh]}
+  qcew_establishments_total:    {name: "QCEW establishments, all covered industries", unit: establishments, direction_good: up, half_life_days: 90, source: bls_qcew, frequency: quarterly, regions: [phx, jh]}
+  # --- Demographics (ACS 5-year, PEP) ---------------------------------------------------------
+  population:         {name: "Population (ACS 5-year estimate)", unit: people, direction_good: neutral, half_life_days: 365, source: census_acs, frequency: annual, regions: [phx, jh]}
+  households:         {name: "Households (ACS 5-year estimate)", unit: households, direction_good: neutral, half_life_days: 365, source: census_acs, frequency: annual, regions: [phx, jh]}
+  median_hh_income:   {name: "Median household income (ACS 5-year estimate)", unit: USD, direction_good: up, half_life_days: 365, source: census_acs, frequency: annual, regions: [phx, jh]}
+  pop_estimate:       {name: "Population estimate, July 1 (Census PEP)", unit: people, direction_good: neutral, half_life_days: 365, source: census_pep, frequency: annual, regions: [phx, jh]}
+  net_migration:      {name: "Net migration, July 1 to June 30 (Census PEP)", unit: people, direction_good: up, half_life_days: 365, source: census_pep, frequency: annual, regions: [phx, jh]}
+  domestic_migration: {name: "Net domestic migration (Census PEP)", unit: people, direction_good: up, half_life_days: 365, source: census_pep, frequency: annual, regions: [phx, jh]}
+  international_migration: {name: "Net international migration (Census PEP)", unit: people, direction_good: up, half_life_days: 365, source: census_pep, frequency: annual, regions: [phx, jh]}
+  # --- Building permits (Census BPS) ----------------------------------------------------------
+  permits_sf_units:   {name: "Single-family (1-unit) housing units permitted (Census BPS)", unit: units, direction_good: neutral, half_life_days: 60, source: census_bps, frequency: monthly, regions: [phx, jh]}
+  permits_mf_units:   {name: "Multifamily (2+ unit) housing units permitted (Census BPS)", unit: units, direction_good: neutral, half_life_days: 60, source: census_bps, frequency: monthly, regions: [phx, jh]}
+  permits_total_units: {name: "Total housing units permitted (Census BPS)", unit: units, direction_good: neutral, half_life_days: 60, source: census_bps, frequency: monthly, regions: [phx, jh]}
+  permits_sf_buildings: {name: "Single-family buildings permitted (Census BPS)", unit: buildings, direction_good: neutral, half_life_days: 60, source: census_bps, frequency: monthly, regions: [phx, jh]}
+  permits_mf_buildings: {name: "Multifamily (2+ unit) buildings permitted (Census BPS)", unit: buildings, direction_good: neutral, half_life_days: 60, source: census_bps, frequency: monthly, regions: [phx, jh]}
+  permits_sf_value:   {name: "Single-family permit valuation (Census BPS)", unit: USD, direction_good: neutral, half_life_days: 60, source: census_bps, frequency: monthly, regions: [phx, jh]}
+  # --- Jackson: tourism, snow, taxes ----------------------------------------------------------
+  snotel_swe_phillips_bench: {name: "Snow water equivalent, end of month, Phillips Bench SNOTEL (689)", unit: inches, direction_good: up, half_life_days: 30, source: snotel, frequency: monthly, regions: [jh]}
+  snotel_swe_togwotee_pass:  {name: "Snow water equivalent, end of month, Togwotee Pass SNOTEL (822)", unit: inches, direction_good: up, half_life_days: 30, source: snotel, frequency: monthly, regions: [jh]}
+  snotel_swe_grand_targhee:  {name: "Snow water equivalent, end of month, Grand Targhee SNOTEL (1082)", unit: inches, direction_good: up, half_life_days: 30, source: snotel, frequency: monthly, regions: [jh]}
+  snotel_swe_granite_creek:  {name: "Snow water equivalent, end of month, Granite Creek SNOTEL (497)", unit: inches, direction_good: up, half_life_days: 30, source: snotel, frequency: monthly, regions: [jh]}
+  grte_rec_visits:    {name: "Grand Teton NP recreation visits (NPS STATS)", unit: visits, direction_good: up, half_life_days: 60, source: nps_stats, frequency: monthly, regions: [jh]}
+  sales_use_tax_distribution: {name: "Sales and use tax distribution received (Wyoming DOR)", unit: USD, direction_good: up, half_life_days: 60, source: wy_revenue, frequency: monthly, regions: [jh]}
+  lodging_tax_distribution:   {name: "Lodging tax distribution received (Wyoming DOR)", unit: USD, direction_good: up, half_life_days: 60, source: wy_revenue, frequency: monthly, regions: [jh]}
+  airport_enplanements: {name: "Jackson Hole Airport enplanements (board activity report)", unit: passengers, direction_good: up, half_life_days: 60, source: jh_airport, frequency: monthly, regions: [jh]}

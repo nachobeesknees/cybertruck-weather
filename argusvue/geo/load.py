@@ -222,6 +222,7 @@ def load_region(conn: psycopg.Connection, region_id: str) -> dict:
 
         stats.update(derive_attributes(conn))
         stats.update(load_submarkets_for_region(conn, reg.id))
+        stats.update(refresh_ancestry(conn))
         conn.commit()
         return dict(stats)
 
@@ -311,3 +312,13 @@ def load_submarkets_for_region(conn: psycopg.Connection, region_id: str) -> dict
             (region_id,),
         )
     return {"submarkets": n}
+
+
+def refresh_ancestry(conn: psycopg.Connection) -> dict:
+    """Rebuild the materialised geo_ancestry table (exists from migration 0002 on)."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('geo_ancestry') IS NOT NULL AS present")
+        if not cur.fetchone()["present"]:
+            return {}
+        cur.execute("SELECT geo_ancestry_refresh() AS n")
+        return {"ancestry_rows": cur.fetchone()["n"]}

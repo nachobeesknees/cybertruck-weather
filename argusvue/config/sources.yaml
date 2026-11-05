@@ -1,0 +1,264 @@
+# Structured and web sources. `regions: ['*']` means national context (ingested with --region '*').
+# reliability feeds claim confidence for structured rows; origin_key counts independence.
+# robots_disallowed: the host's robots.txt disallows crawlers for this path. Structured ingest is not a
+# crawler (explicit publisher-linked URLs at the publisher's cadence), see DECISIONS 2026-11-05; set
+# STRICT_ROBOTS=true to disable these sources anyway.
+sources:
+  zillow:
+    name: Zillow Research public CSVs (ZHVI, ZORI, inventory, price cuts, days to pending)
+    kind: structured
+    origin_key: zillow
+    url: https://www.zillow.com/research/data/
+    cadence: 1 month
+    reliability: 0.9
+    license_note: "Zillow Research data are free to use with attribution to Zillow (https://www.zillow.com/research/data/). Not redistributed; cited per point."
+    regions: [phx, jh]
+    module: argusvue.ingest.zillow:ZillowSource
+    config:
+      base: https://files.zillowstatic.com/research/public_csvs
+      metro_to_cbsa: {"Phoenix, AZ": "38060", "Jackson, WY": "27220"}
+      files:
+        zhvi:             {metro: "zhvi/Metro_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv", zip: "zhvi/Zip_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"}
+        zori_rent:        {metro: "zori/Metro_zori_uc_sfrcondomfr_sm_month.csv", zip: "zori/Zip_zori_uc_sfrcondomfr_sm_month.csv"}
+        zillow_inventory: {metro: "invt_fs/Metro_invt_fs_uc_sfrcondo_sm_month.csv"}
+        price_cut_share:  {metro: "perc_listings_price_cut/Metro_perc_listings_price_cut_uc_sfrcondo_sm_month.csv"}
+        days_to_pending:  {metro: "mean_doz_pending/Metro_mean_doz_pending_uc_sfrcondo_sm_month.csv"}
+  redfin:
+    name: Redfin Data Center housing market tracker (monthly; metro, county, city, zip)
+    kind: structured
+    origin_key: redfin
+    url: https://www.redfin.com/news/data-center/downloads/
+    cadence: 1 month
+    reliability: 0.9
+    license_note: "Redfin Data Center files are public; Redfin site Terms of Use apply. Attribution 'Source: Redfin'; aggregate use, no redistribution of tables."
+    regions: [phx, jh]
+    module: argusvue.ingest.redfin:RedfinSource
+    request_delay_s: 2
+    config:
+      base: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_data_center
+      files:
+        metros:   housing_market/monthly/all_metros.csv      # 46 MB
+        counties: housing_market/monthly/all_counties.csv    # 148 MB
+        zips:     housing_market/monthly/all_zips.csv        # 1.3 GB, stream
+        cities:   housing_market/monthly/all_cities.csv      # 1.1 GB, stream
+      index: index.json
+      frequency_filter: Monthly
+      columns:
+        median_sale_price: "MEDIAN SALE PRICE NSA ($)"
+        median_dom: "MEDIAN DAYS ON MARKET (DAYS)"
+        active_inventory: "INVENTORY"
+        months_of_supply: "MONTHS OF SUPPLY"
+        new_listings: "NEW LISTINGS"
+        homes_sold: "HOMES SOLD"
+        sale_to_list: "AVERAGE SALE TO LIST RATIO (%)"
+        share_sold_above_list: "SHARE SOLD ABOVE ORIGINAL LIST (%)"
+        pct_off_market_2w: "PERCENT OFF MARKET IN TWO WEEKS (%)"
+  apartment_list:
+    name: Apartment List rent estimates (monthly CSV, link scraped from the research page)
+    kind: structured
+    origin_key: apartment_list
+    url: https://www.apartmentlist.com/research/category/data-rent-estimates
+    cadence: 1 month
+    reliability: 0.8
+    license_note: "Apartment List research data, free with attribution to Apartment List; no explicit license text on the page (research@apartmentlist.com)."
+    regions: [phx]
+    module: argusvue.ingest.apartment_list:ApartmentListSource
+    config:
+      page: https://www.apartmentlist.com/research/category/data-rent-estimates
+      file_pattern: "Apartment_List_Rent_Estimates_\\d{4}_\\d{2}\\.csv"
+      cdn_host: assets.ctfassets.net
+  freddie_mac:
+    name: Freddie Mac Primary Mortgage Market Survey (PMMS) history
+    kind: structured
+    origin_key: freddie_mac
+    url: https://www.freddiemac.com/pmms
+    cadence: 1 week
+    reliability: 0.95
+    license_note: "PMMS data are public; attribution to Freddie Mac. National context only."
+    regions: ['*']
+    module: argusvue.ingest.freddie_mac:PmmsSource
+    config:
+      url: https://www.freddiemac.com/pmms/docs/PMMS_history.csv
+  irs_soi:
+    name: IRS SOI county-to-county migration (inflow/outflow CSVs)
+    kind: structured
+    origin_key: irs
+    url: https://www.irs.gov/statistics/soi-tax-stats-migration-data
+    cadence: 1 year
+    reliability: 0.95
+    license_note: "US government work; public domain."
+    regions: [phx, jh]
+    module: argusvue.ingest.irs_soi:IrsMigrationSource
+    config:
+      base: https://www.irs.gov/pub/irs-soi
+      first_year_pair: "1112"          # countyinflow1112.csv = 2011->2012 flows; probe forward until 404
+      total_row_countyfips: "96000"    # 'Total Migration-US and Foreign' summary row
+  fred:
+    name: FRED (St. Louis Fed) CSV mirror of BLS CES employment and LAUS unemployment
+    kind: structured
+    origin_key: bls
+    url: https://fred.stlouisfed.org/
+    cadence: 1 month
+    reliability: 0.9
+    license_note: "Attribution required to FRED and to BLS (source). BLS data are public domain. Fallback because api.bls.gov hit a shared daily limit and download.bls.gov blocks this client (DECISIONS 2026-11-05)."
+    regions: [phx, jh]
+    module: argusvue.ingest.fred:FredSource
+    request_delay_s: 1.5
+    config:
+      base: https://fred.stlouisfed.org/graph/fredgraph.csv?id=
+      series:
+        - {ids: [PHOE004URN], indicator: unemployment_rate, geo: "cbsa:38060"}
+        - {ids: [AZMARI3URN], indicator: unemployment_rate, geo: "county:04013"}
+        - {ids: [AZPINA5URN], indicator: unemployment_rate, geo: "county:04021"}
+        - {ids: [WYTETO9URN], indicator: unemployment_rate, geo: "county:56039"}
+        - {ids: [IDTETO1URN], indicator: unemployment_rate, geo: "county:16081"}
+        - {ids: [WYLINC3URN], indicator: unemployment_rate, geo: "county:56023"}
+        - {ids: [PHOE004NAN, PHOE004NA], indicator: nonfarm_jobs_total, geo: "cbsa:38060"}
+        - {ids: [SMU04380602000000001], indicator: nonfarm_jobs_construction, geo: "cbsa:38060"}
+        - {ids: [PHOE004MFGN, PHOE004MFG], indicator: nonfarm_jobs_manufacturing, geo: "cbsa:38060"}
+        - {ids: [PHOE004LEIHN, PHOE004LEIH], indicator: nonfarm_jobs_leisure_hospitality, geo: "cbsa:38060"}
+        - {ids: [PHOE004PBSVN, PHOE004PBSV], indicator: nonfarm_jobs_prof_business, geo: "cbsa:38060"}
+        - {ids: [PHOE004EDUHN, PHOE004EDUH], indicator: nonfarm_jobs_education_health, geo: "cbsa:38060"}
+        - {ids: [PHOE004FIREN, PHOE004FIRE], indicator: nonfarm_jobs_financial, geo: "cbsa:38060"}
+        - {ids: [PHOE004TRADN, PHOE004TRAD], indicator: nonfarm_jobs_trade_transport_utilities, geo: "cbsa:38060"}
+        - {ids: [PHOE004GOVTN, PHOE004GOVT], indicator: nonfarm_jobs_government, geo: "cbsa:38060"}
+        - {ids: [PHOE004INFON, PHOE004INFO], indicator: nonfarm_jobs_information, geo: "cbsa:38060"}
+  bls_qcew:
+    name: BLS Quarterly Census of Employment and Wages (open data API, county quarterly files)
+    kind: structured
+    origin_key: bls
+    url: https://www.bls.gov/cew/additional-resources/open-data/
+    cadence: 3 months
+    reliability: 0.95
+    license_note: "US government work; public domain."
+    regions: [phx, jh]
+    module: argusvue.ingest.bls_qcew:QcewSource
+    config:
+      base: https://data.bls.gov/cew/data/api
+      first_year: 2010
+      incremental_quarters: 3
+      industries:                      # industry_code -> indicator suffix
+        "10": total                    # agglvl 70 (county, total covered, own_code 0)
+        "23": construction             # agglvl 74 (county, NAICS sector, own_code 5 private)
+        "31-33": manufacturing
+        "53": real_estate
+        "72": accommodation_food
+  census_acs:
+    name: Census ACS 5-year estimates (population, households, median household income)
+    kind: structured
+    origin_key: census
+    url: https://api.census.gov/data.html
+    cadence: 1 year
+    reliability: 0.95
+    license_note: "US government work; public domain. Census API used without a key (<500 calls/day)."
+    regions: [phx, jh]
+    module: argusvue.ingest.census_acs:AcsSource
+    config:
+      base: https://api.census.gov/data
+      first_year: 2011
+      variables: {B01003_001E: population, B11001_001E: households, B19013_001E: median_hh_income}
+  census_pep:
+    name: Census Population Estimates Program, county totals and components of change
+    kind: structured
+    origin_key: census
+    url: https://www.census.gov/programs-surveys/popest.html
+    cadence: 1 year
+    reliability: 0.95
+    license_note: "US government work; public domain."
+    regions: [phx, jh]
+    module: argusvue.ingest.census_pep:PepSource
+    config:
+      files:
+        - {vintage: 2019, url: "https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv", years: [2010, 2019]}
+        - {vintage: 2024, url: "https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/counties/totals/co-est2024-alldata.csv", years: [2020, 2024]}
+        - {vintage: 2025, url: "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/counties/totals/co-est2025-alldata.csv", years: [2020, 2025]}
+      encoding: latin-1
+      columns: {POPESTIMATE: pop_estimate, NETMIG: net_migration, DOMESTICMIG: domestic_migration, INTERNATIONALMIG: international_migration}
+  census_bps:
+    name: Census Building Permits Survey, monthly place and county files
+    kind: structured
+    origin_key: census
+    url: https://www.census.gov/construction/bps/
+    cadence: 1 month
+    reliability: 0.9
+    license_note: "US government work; public domain. Monthly 'c' files include imputed values for non-reporting permit offices."
+    regions: [phx, jh]
+    module: argusvue.ingest.census_bps:BpsSource
+    config:
+      base: https://www2.census.gov/econ/bps
+      place_dir: "Place/West Region"
+      place_prefix: we
+      county_prefix: co
+      first_period: "2010-01"
+      incremental_months: 4
+  snotel:
+    name: USDA NRCS SNOTEL snow water equivalent (AWDB REST API), Jackson-area stations
+    kind: structured
+    origin_key: nrcs
+    url: https://wcc.sc.egov.usda.gov/awdbRestApi/
+    cadence: 1 month
+    reliability: 0.95
+    license_note: "US government work; public domain."
+    regions: [jh]
+    module: argusvue.ingest.snotel:SnotelSource
+    config:
+      base: https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1
+      element: WTEQ
+      begin_date: "1980-10-01"
+      incremental_days: 120
+      stations:
+        - {triplet: "689:WY:SNTL", indicator: snotel_swe_phillips_bench}
+        - {triplet: "822:WY:SNTL", indicator: snotel_swe_togwotee_pass}
+        - {triplet: "1082:WY:SNTL", indicator: snotel_swe_grand_targhee}
+        - {triplet: "497:WY:SNTL", indicator: snotel_swe_granite_creek}
+  nps_stats:
+    name: NPS Visitor Use Statistics, Grand Teton NP monthly recreation visits
+    kind: structured
+    origin_key: nps
+    url: https://irma.nps.gov/Stats/
+    cadence: 1 month
+    reliability: 0.95
+    license_note: "US government work; public domain. The data service host's robots.txt disallows crawlers; fetched once per run (DECISIONS 2026-11-05)."
+    regions: [jh]
+    module: argusvue.ingest.nps_stats:NpsStatsSource
+    robots_disallowed: true
+    config:
+      base: https://irmaservices.nps.gov/v3/rest/stats/visitation
+      unit_code: GRTE
+      geo: "county:56039"
+      start_year: 1979
+  wy_revenue:
+    name: Wyoming Department of Revenue sales/use and lodging tax distribution reports (PDF)
+    kind: structured
+    origin_key: wy_dor
+    url: https://revenue.wyo.gov/tax-distribution-reports/sales-and-use-distributions
+    cadence: 1 month
+    reliability: 0.95
+    license_note: "Wyoming public records published by the Department of Revenue; files hosted on Google Drive (robots-disallowed download host, DECISIONS 2026-11-05)."
+    regions: [jh]
+    module: argusvue.ingest.wy_revenue:WyRevenueSource
+    robots_disallowed: true
+    request_delay_s: 5
+    config:
+      index_pages:
+        total_distributions: https://revenue.wyo.gov/tax-distribution-reports/total-distributions
+        sales_and_use: https://revenue.wyo.gov/tax-distribution-reports/sales-and-use-distributions
+      drive_download: "https://drive.usercontent.google.com/download?id={id}&export=download"
+      drive_download_fallback: "https://drive.google.com/uc?export=download&id={id}"
+      entities: {county: [TETON, LINCOLN], town: [JACKSON, ALPINE, AFTON]}
+  jh_airport:
+    name: Jackson Hole Airport board activity reports (monthly PDFs)
+    kind: structured
+    origin_key: jh_airport
+    url: https://www.jacksonholeairport.com/airport-board/activity-reports/
+    cadence: 1 month
+    reliability: 0.9
+    license_note: "Public airport board reports; robots.txt allows with Crawl-delay 10."
+    regions: [jh]
+    module: argusvue.ingest.jh_airport:JhAirportSource
+    request_delay_s: 10
+    config:
+      index_page: https://www.jacksonholeairport.com/airport-board/activity-reports/
+      geo: "county:56039"
+      first_period: "2018-01"
+      incremental_months: 3

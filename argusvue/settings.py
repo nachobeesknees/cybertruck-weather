@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     exa_api_key: str | None = None
     daily_spend_cap_usd: float = 20.0
     timezone: str = "America/Phoenix"
+    # Structured sources fetch explicit publisher-linked URLs at the publisher's cadence; the web
+    # collectors enforce robots.txt on discovered URLs. Set true to also disable the structured sources
+    # whose host robots.txt disallows crawlers (flagged robots_disallowed in sources.yaml). See DECISIONS.
+    strict_robots: bool = False
 
     data_dir: Path = Field(default=REPO_ROOT / "data")
     out_dir: Path = Field(default=REPO_ROOT / "out")

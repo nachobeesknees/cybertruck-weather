@@ -21,53 +21,6 @@ from argusvue.geo.resolve import resolve
 pytestmark = pytest.mark.db
 
 
-def _box(x0, y0, x1, y1) -> str:
-    return f"MULTIPOLYGON((({x0} {y0},{x1} {y0},{x1} {y1},{x0} {y1},{x0} {y0})))"
-
-
-UNITS = [
-    ("country:US", "country", "US", None),
-    ("state:99", "state", "99", _box(0, 0, 10, 10)),
-    ("cbsa:99999", "cbsa", "99999", _box(0, 0, 6, 6)),
-    ("county:99001", "county", "99001", _box(0, 0, 3, 3)),
-    ("county:99002", "county", "99002", _box(7, 7, 10, 10)),
-    ("place:9900001", "place", "9900001", _box(1, 1, 2, 2)),
-    ("zcta:99001", "zcta", "99001", _box(1.2, 1.2, 1.8, 1.8)),
-    ("zcta:99002", "zcta", "99002", _box(2.2, 2.2, 2.8, 2.8)),
-    ("tract:99001000100", "tract", "99001000100", _box(1.3, 1.3, 1.4, 1.4)),
-]
-
-
-@pytest.fixture
-def synthetic(db):
-    with db.cursor() as cur:
-        cur.execute("TRUNCATE submarkets, geo_units, cbsa_counties, regions, job_runs RESTART IDENTITY CASCADE")
-        cur.execute("INSERT INTO regions(id, name, cbsa_code, county_fips) VALUES ('tst','Test','99999',ARRAY['99001'])")
-        cur.execute(
-            "INSERT INTO cbsa_counties VALUES ('99001','99999','Test, XX','Metropolitan Statistical Area','Central','test')"
-        )
-        for key, level, code, wkt in UNITS:
-            cur.execute(
-                """INSERT INTO geo_units(geo_key, level, code, name, region_id, geom, vintage)
-                   VALUES (%s, %s, %s, %s, CASE WHEN %s IN ('county','place','zcta','tract') THEN 'tst' END,
-                           ST_SetSRID(ST_GeomFromText(%s), 4326), 'test')""",
-                (key, level, code, key, level, wkt),
-            )
-        derive_attributes(db)
-        cur.execute(
-            """INSERT INTO geo_units(geo_key, level, code, name, region_id, geom, vintage)
-               SELECT 'sub:test-sub','sub','test-sub','Test Sub','tst', ST_Multi(ST_Union(geom)), 'config'
-               FROM geo_units WHERE geo_key IN ('zcta:99001','zcta:99002')"""
-        )
-        cur.execute(
-            """INSERT INTO submarkets(geo_key, region_id, name, member_keys, geom)
-               SELECT geo_key, 'tst', name, ARRAY['zcta:99001','zcta:99002'], geom FROM geo_units WHERE geo_key='sub:test-sub'"""
-        )
-        derive_attributes(db)
-    db.commit()
-    yield db
-
-
 def test_zcta_ancestors_include_every_coarser_container(synthetic):
     r = resolve(synthetic, "zcta:99001")
     assert r.ancestor_keys == ["country:US", "state:99", "cbsa:99999", "county:99001", "place:9900001", "sub:test-sub"]
@@ -139,3 +92,16 @@ def test_derive_attributes_is_idempotent(synthetic):
         cur.execute("SELECT geo_key, parent_key, region_id FROM geo_units ORDER BY geo_key")
         after = cur.fetchall()
     assert before == after
+
+
+def test_materialised_ancestry_matches_dynamic_function(synthetic):
+    with synthetic.cursor() as cur:
+        cur.execute("SELECT geo_key FROM geo_units WHERE level <> 'country' ORDER BY 1")
+        keys = [r["geo_key"] for r in cur.fetchall()]
+        for k in keys:
+            cur.execute("SELECT ancestor_key FROM geo_ancestry WHERE geo_key = %s ORDER BY 1", (k,))
+            mat = [r["ancestor_key"] for r in cur.fetchall()]
+            cur.execute("""SELECT geo_key FROM geo_ancestors(%s)
+                           UNION SELECT s.geo_key FROM submarkets s WHERE %s = ANY(s.member_keys) ORDER BY 1""", (k, k))
+            dyn = [r["geo_key"] for r in cur.fetchall()]
+            assert mat == dyn, k
