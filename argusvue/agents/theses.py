@@ -122,7 +122,8 @@ def write_version(conn: psycopg.Connection, thesis_id: int, *, statement: str, s
         if t["current_version"]:
             cur.execute("SELECT status FROM thesis_versions WHERE thesis_id = %s AND version = %s", (thesis_id, t["approved_version"] or t["current_version"]))
             prev_status = cur.fetchone()["status"]
-        version = t["current_version"] + 1
+        cur.execute("SELECT coalesce(max(version), 0) + 1 AS v FROM thesis_versions WHERE thesis_id = %s", (thesis_id,))
+        version = cur.fetchone()["v"]          # never reuse a number, even after a human rejection moved current back
         cur.execute(
             """INSERT INTO thesis_versions(thesis_id, version, statement, status, confidence, confidence_reasoning, implications,
                                            change_summary, analyst_run_id, critic_run_id, critic_verdict, known_disputes, trigger)

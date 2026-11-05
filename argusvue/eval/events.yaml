@@ -1,0 +1,62 @@
+# Hand-curated notable events per region for `argusvue eval recall` (SPEC §10).
+# Every entry was confirmed against a public source (url). Add more; keep only confirmed events.
+# An event is "captured" when a non-structured document (published_at/fetched_at within [date-2d, date+14d])
+# or a claim excerpt matches >= 2 keywords, or a document URL matches `url`.
+events:
+  # ---- Phoenix ----
+  - id: phx-ama-groundwater-pause-2023
+    region: phx
+    date: 2023-06-01
+    title: Hobbs announces Phoenix AMA groundwater model results and pause on new assured water supply determinations reliant on groundwater
+    keywords: [groundwater, assured water supply, Phoenix AMA, Hobbs, unmet demand]
+    url: https://www.kold.com/2023/06/01/gov-hobbs-announces-pause-new-home-builds-that-rely-groundwater
+    geo_key: cbsa:38060
+  - id: phx-tsmc-engineering-wafers-2024
+    region: phx
+    date: 2024-04-18
+    title: TSMC Q1 call - first Arizona fab begins engineering wafer production (N4), volume production on track for 1H 2025
+    keywords: [TSMC, Arizona, wafer, fab, production]
+    url: https://www.abc15.com/news/business/wafer-production-underway-at-tsmcs-phoenix-factory-q1-earnings-beat-expectations
+  - id: phx-mesa-data-centers-2024
+    region: phx
+    date: 2024-08-26
+    title: Mesa City Council unanimously approves Pacific Proving Technology Campus and Merit Legacy Technology Park data centers
+    keywords: [Mesa, data center, Pacific Proving, Merit, council]
+    url: https://www.abc15.com/news/business/major-data-center-projects-by-pacific-proving-and-merit-partners-receive-approval
+  - id: phx-tsmc-chips-award-2024
+    region: phx
+    date: 2024-11-15
+    title: Commerce finalizes $6.6B CHIPS Act award to TSMC Arizona
+    keywords: [TSMC, CHIPS, $6.6 billion, Arizona, Commerce]
+    url: https://www.axios.com/local/phoenix/2024/11/15/tsmc-chips-act-funding
+  - id: phx-tsmc-100b-2025
+    region: phx
+    date: 2025-03-03
+    title: TSMC announces additional $100B Arizona investment (total $165B)
+    keywords: [TSMC, $100 billion, Arizona, $165 billion, packaging]
+    url: https://www.gpec.org/news/tsmc-announces-100-billion-investment-arizona
+  # ---- Jackson ----
+  - id: jh-wy-property-tax-bills-2024
+    region: jh
+    date: 2024-03-21
+    title: Gov. Gordon signs HB0003, HB0045 (4% cap on residential property tax increases) and SF0089
+    keywords: [property tax, Gordon, HB0045, homeowners, Wyoming]
+    url: https://content.govdelivery.com/accounts/WYGOV/bulletins/391f019
+  - id: jh-teton-pass-landslide-2024
+    region: jh
+    date: 2024-06-08
+    title: Teton Pass (WYO 22) collapses at milepost 12.8 - road closed indefinitely
+    keywords: [Teton Pass, landslide, WYDOT, closure, Highway 22]
+    url: https://www.dot.state.wy.us/news/teton-pass-road-closure-continues-interim-detour-planned
+  - id: jh-teton-pass-detour-2024
+    region: jh
+    date: 2024-06-28
+    title: Teton Pass reopens with temporary detour three weeks after the landslide
+    keywords: [Teton Pass, detour, reopen, WYDOT, commuters]
+    url: https://knpr.org/2024-06-28/teton-pass-reopens-with-temporary-detour-after-three-weeks
+  - id: jh-wy-25pct-property-tax-cut-2025
+    region: jh
+    date: 2025-03-04
+    title: Gov. Gordon signs SF0069, 25% property tax exemption for Wyoming homeowners
+    keywords: [property tax, SF0069, 25%, homeowners, Gordon]
+    url: https://content.govdelivery.com/accounts/WYGOV/bulletins/3d54ec5

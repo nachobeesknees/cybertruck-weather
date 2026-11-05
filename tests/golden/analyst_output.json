@@ -1,0 +1,32 @@
+{
+  "action": "update",
+  "statement": "Demand tied to the TSMC campus and its suppliers is pulling forward home prices and rents in the North Phoenix corridor relative to the Phoenix metro.",
+  "status": "emerging",
+  "confidence": 0.45,
+  "confidence_reasoning": {
+    "independence": "Two support claims come from distinct origins (a local outlet and a developer press release).",
+    "recency": "Both claims were observed within the last 30 days.",
+    "corroboration": "The unit count is corroborated across the two origins; rent effects are not yet measured.",
+    "mechanism": "Employer-driven demand raising nearby prices is a standard mechanism with a plausible lag.",
+    "base_rate": "Corridor premiums around large employers usually appear within two years; the evidence is early."
+  },
+  "support": [101, 102],
+  "counter": [],
+  "causal_edges": [
+    {"cause": "TSMC and supplier hiring", "effect": "corridor home values", "mechanism": "worker relocation adds local housing demand",
+     "lag_months": 12, "strength": "moderate", "evidence": [101], "status": "hypothesis",
+     "cause_indicator": null, "effect_indicator": "zhvi", "geo_key": "zcta:85085"}
+  ],
+  "implications": [
+    {"text": "Corridor ZHVI may outgrow the metro ZHVI over the next 12 months.", "cites": ["zhvi@zcta:85085"], "horizon_months": 12, "hypothesis": false},
+    {"text": "Rents in 85085 may rise faster than the metro if supplier hiring continues.", "cites": [], "horizon_months": 12, "hypothesis": true}
+  ],
+  "falsifiers": [
+    {"indicator_id": "zhvi", "geo_key": "zcta:85085", "operator": "<", "threshold": 450000, "by_date": "2027-09-30", "action": "review",
+     "description": "85085 home values fall below 450k"}
+  ],
+  "open_questions": [
+    {"question": "How many supplier jobs have actually been filled on site?", "collector_task": {"objective": "TSMC Arizona supplier hiring counts 2026", "kind": "search"}}
+  ],
+  "change_summary": "Adds two cited claims on corridor approvals and raises confidence slightly; the previous seed version cited no claims."
+}

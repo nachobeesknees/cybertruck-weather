@@ -420,6 +420,64 @@ def theses_show(thesis_id: int = typer.Argument(...), version: int = typer.Optio
         console.print(f"  human: v{dec['version']} {dec['decision']} {dec['decided_at']:%Y-%m-%d} {dec['note'] or ''}")
 
 
+@theses_app.command("review")
+def theses_review(thesis_id: int = typer.Argument(...), force: bool = typer.Option(False, "--force", help="Skip triage"),
+                  dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+    """Run Triage -> Analyst -> Validator -> Critic -> Gate for one thesis (fully logged in thesis_events)."""
+    from argusvue.agents.review import review_thesis
+    from argusvue.store.db import connection
+    from argusvue.store.jobs import job_run
+
+    with connection() as conn, job_run(conn, "theses.review", None) as run:
+        o = review_thesis(conn, thesis_id, trigger="manual", force=force, dry_run=dry_run)
+        run.stats.update(o.summary())
+    console.print(o.summary())
+    if o.proposal:
+        console.print(f"[bold]{o.proposal.action}[/bold] -> {o.proposal.status} ({o.proposal.confidence:.2f}): {o.proposal.statement}")
+        console.print(f"change: {o.proposal.change_summary}")
+    if o.critic:
+        console.print(f"critic: {o.critic.verdict} - {o.critic.summary}")
+
+
+@theses_app.command("review-due")
+def theses_review_due(region: str = typer.Option(None, "--region"), limit: int = typer.Option(20, "--limit"),
+                      dry: bool = typer.Option(False, "--list", help="Only list what is due")) -> None:
+    """Review every thesis whose triggers fired (falsifier, new claims, anomalies, weekly schedule)."""
+    from argusvue.agents.review import due_theses, review_due
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        if dry:
+            for t in due_theses(conn, region):
+                console.print(f"#{t['id']} {t['slug']}: {', '.join(t['reasons'])}")
+            return
+        for r in review_due(conn, region, limit=limit):
+            console.print(r)
+
+
+@theses_app.command("events")
+def theses_events(thesis_id: int = typer.Argument(...), last: int = typer.Option(30, "--last")) -> None:
+    """The review log for a thesis: every triage, analyst, validator, critic and gate step with run ids."""
+    from argusvue.store.db import connection, fetch_all
+
+    with connection() as conn:
+        rows = fetch_all(conn, "SELECT * FROM thesis_events WHERE thesis_id = %s ORDER BY id DESC LIMIT %s", (thesis_id, last))
+    for r in reversed(rows):
+        console.print(f"{r['created_at']:%Y-%m-%d %H:%M} v{r['version'] or '-'} {r['kind']:<12} run={r['run_id'] or '-'} {str(r['payload'])[:300]}")
+
+
+@app.command("replay")
+def replay_cmd(as_of: str = typer.Option(..., "--as-of", help="YYYY-MM-DD"), thesis: int = typer.Option(..., "--thesis")) -> None:
+    """Rebuild the packet with evidence observed on or before AS_OF and run the loop in dry-run mode."""
+    from datetime import date
+
+    from argusvue.eval.replay import replay
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(replay(conn, thesis, date.fromisoformat(as_of)))
+
+
 @theses_app.command("approve")
 def theses_approve(thesis_id: int = typer.Argument(...), note: str = typer.Option("", "--note")) -> None:
     """Human gate: approve the current version (required before a status change renders as current)."""
@@ -470,3 +528,195 @@ def spend(days: int = typer.Option(7, "--days")) -> None:
 
 if __name__ == "__main__":
     app()
+
+
+# ---- quant ----------------------------------------------------------------------------------------
+quant_app = typer.Typer(no_args_is_help=True, help="Quant: anomalies, falsifier checks, lead-lag tests")
+app.add_typer(quant_app, name="quant")
+
+
+@quant_app.command("run")
+def quant_run(region: str = typer.Option(..., "--region")) -> None:
+    """Recompute anomalies, check falsifiers, test causal edges for a region."""
+    from argusvue.quant import run_quant
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        res = run_quant(conn, region)
+    console.print({"anomalies": res["anomalies"], "falsifiers": res["falsifiers"],
+                   "edges": {k: v for k, v in res["edges"].items() if k != "results"}})
+    for r in res["edges"]["results"]:
+        console.print(r)
+
+
+@quant_app.command("anomalies")
+def quant_anomalies(region: str = typer.Option(..., "--region"), min_z: float = typer.Option(2.0, "--min-z"),
+                    limit: int = typer.Option(30, "--limit")) -> None:
+    """Biggest |z| moves in the latest quant batch."""
+    from argusvue.quant import latest_anomalies
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        rows = latest_anomalies(conn, region, min_abs_z=min_z, limit=limit)
+    t = Table(title=f"anomalies {region} (|z| >= {min_z})")
+    for col in ("indicator", "geo", "period", "value", "unit", "z", "yoy%", "mom%"):
+        t.add_column(col)
+    f = lambda x: "" if x is None else f"{float(x):.1f}"
+    for r in rows:
+        t.add_row(r["name"], r["geo_key"], str(r["period"]), f"{float(r['value']):,.2f}", r["unit"],
+                  f"{float(r['zscore']):.2f}", f(r["yoy_pct"]), f(r["mom_pct"]))
+    console.print(t)
+
+
+@quant_app.command("falsifiers")
+def quant_falsifiers(region: str = typer.Option(None, "--region")) -> None:
+    """Falsifiers with their latest check."""
+    from argusvue.store.db import connection, fetch_all
+
+    with connection() as conn:
+        rows = fetch_all(conn, """SELECT f.id, t.slug, f.indicator_id, f.geo_key, f.operator, f.threshold, f.by_date, f.outcome,
+                                         c.checked_at, c.period, c.value, c.triggered
+                                  FROM falsifiers f JOIN theses t ON t.id = f.thesis_id
+                                  LEFT JOIN LATERAL (SELECT * FROM falsifier_checks WHERE falsifier_id = f.id
+                                                     ORDER BY checked_at DESC, id DESC LIMIT 1) c ON true
+                                  WHERE %(r)s::text IS NULL OR t.region_id = %(r)s ORDER BY f.id""", {"r": region})
+    t = Table(title="falsifiers")
+    for col in ("id", "thesis", "indicator", "geo", "rule", "by", "last value", "period", "triggered", "outcome"):
+        t.add_column(col)
+    for r in rows:
+        t.add_row(str(r["id"]), r["slug"], r["indicator_id"], r["geo_key"], f"{r['operator']} {float(r['threshold']):,.2f}",
+                  str(r["by_date"]), "" if r["value"] is None else f"{float(r['value']):,.2f}",
+                  str(r["period"] or ""), "" if r["triggered"] is None else str(r["triggered"]), r["outcome"] or "open")
+    console.print(t)
+
+
+@eval_app.command("recall")
+def eval_recall(region: str = typer.Option(None, "--region")) -> None:
+    """Share of curated events (eval/events.yaml) captured, and median capture latency."""
+    from rich.table import Table
+
+    from argusvue.eval import recall
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        res = recall.compute(conn, region)
+    t = Table("event", "region", "date", "captured", "latency_d", "matches", "first match")
+    for e in res["events"]:
+        t.add_row(e["id"], e["region"], e["date"], "yes" if e["captured"] else "no", str(e["latency_days"]), str(e["matches"]),
+                  str(e["first_match"]))
+    console.print(t)
+    console.print({"regions": res["regions"], "overall": res["overall"]})
+
+
+@eval_app.command("dedup")
+def eval_dedup(region: str = typer.Option(None, "--region")) -> None:
+    """Raw -> unique -> extracted documents -> claims; re-extraction rate."""
+    from rich.table import Table
+
+    from argusvue.eval import dedup
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        res = dedup.compute(conn, region)
+    rows = {**res["regions"], "ALL": res["overall"]}
+    cols = list(res["overall"])
+    t = Table("region", *cols)
+    for rid, r in rows.items():
+        t.add_row(rid, *[str(r[c]) for c in cols])
+    console.print(t)
+
+
+@eval_app.command("staleness")
+def eval_staleness(region: str = typer.Option(None, "--region")) -> None:
+    """Median age and % past half-life of claims behind approved theses."""
+    from argusvue.eval import staleness
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(staleness.compute(conn, region))
+
+
+@eval_app.command("conflicts")
+def eval_conflicts(region: str = typer.Option(None, "--region")) -> None:
+    """Conflicts opened / resolved / time-to-resolve."""
+    from argusvue.eval import conflicts
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(conflicts.compute(conn, region))
+
+
+@eval_app.command("calibration")
+def eval_calibration(region: str = typer.Option(None, "--region")) -> None:
+    """Falsifier outcomes by action and Brier score (needs >= 10 resolved)."""
+    from argusvue.eval import calibration
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(calibration.compute(conn, region))
+
+
+@eval_app.command("cost")
+def eval_cost(days: int = typer.Option(7, "--days"), region: str = typer.Option(None, "--region")) -> None:
+    """Spend per region-day by role/model, job runs by adapter, and today's cap usage."""
+    from rich.table import Table
+
+    from argusvue.eval import cost
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        res = cost.compute(conn, region, days=days)
+    t = Table("day", "region", "role", "model", "calls", "in_tok", "out_tok", "usd")
+    for r in res["llm"]:
+        t.add_row(r["day"], r["region"], r["role"], r["model"], str(r["calls"]), str(r["input_tokens"]), str(r["output_tokens"]),
+                  f"{r['usd']:.4f}")
+    tot = res["totals"]
+    t.add_row("TOTAL", "", "", "", str(tot["calls"]), str(tot["input_tokens"]), str(tot["output_tokens"]), f"{tot['usd']:.4f}")
+    console.print(t)
+    j = Table("day", "region", "adapter", "runs", "failures")
+    for r in res["jobs"]:
+        j.add_row(r["day"], r["region"], r["adapter"], str(r["runs"]), str(r["failures"]))
+    j.add_row("TOTAL", "", "", str(tot["job_runs"]), str(tot["job_failures"]))
+    console.print(j)
+    console.print({"today": res["today"]})
+
+
+# ---- render: daily brief and place pages (SPEC §9) -----------------------------------------------------------
+places_app = typer.Typer(no_args_is_help=True, help="Place pages")
+app.add_typer(places_app, name="places")
+
+
+def _parse_date(value: str | None):
+    from datetime import date
+
+    return date.fromisoformat(value) if value else None
+
+
+@app.command("brief")
+def brief(region: str = typer.Option(..., "--region"),
+          date: str = typer.Option(None, "--date", help="Render as of the end of this day (YYYY-MM-DD); default: now")) -> None:
+    """Write out/briefs/YYYY-MM-DD-<region>.md from claim/indicator ids only."""
+    from argusvue.render.brief import render_brief
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        res = render_brief(conn, region, _parse_date(date))
+    console.print(f"wrote {res.path}  stats={res.stats}")
+    for s in res.dropped:
+        console.print(f"[yellow]dropped[/yellow] {s}")
+
+
+@places_app.command("render")
+def places_render(region: str = typer.Option(..., "--region"),
+                  date: str = typer.Option(None, "--date", help="Render as of the end of this day (YYYY-MM-DD)")) -> None:
+    """Write out/places/<geo_key>.md for the region CBSA, its submarkets and configured places."""
+    from argusvue.render.places import render_places
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        results = render_places(conn, region, _parse_date(date))
+    dropped = sum(len(r.dropped) for r in results)
+    console.print(f"wrote {len(results)} pages to {results[0].path.parent if results else '-'}; dropped sentences: {dropped}")
+    for r in results:
+        for s in r.dropped:
+            console.print(f"[yellow]dropped[/yellow] {r.path.name}: {s}")
