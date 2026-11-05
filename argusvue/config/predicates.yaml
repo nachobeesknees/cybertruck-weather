@@ -1,0 +1,17 @@
+# Predicate classes (SPEC §6): half-life and numeric tolerance for reconciliation. Patterns are regexes
+# matched against the predicate; first match wins; `default` applies otherwise.
+classes:
+  listing_price:       {patterns: ["^listing\\.(price|rent)"],                   half_life_days: 14,  tolerance_rel: 0.01}
+  listing_status:      {patterns: ["^listing\\.status"],                         half_life_days: 30}
+  construction_status: {patterns: ["^project\\.(status|phase|completion)"],      half_life_days: 120}
+  employment_figure:   {patterns: ["^(org|project)\\.(jobs|employees|headcount)", "^employment\\."], half_life_days: 90, tolerance_rel: 0.05}
+  investment:          {patterns: ["^(org|project)\\.(investment|capex|cost)_usd", "\\.usd$"], half_life_days: 180, tolerance_rel: 0.05}
+  units:               {patterns: ["^project\\.(units|beds|lots|acres|sqft)", "^housing\\."], half_life_days: 180, tolerance_rel: 0.02}
+  zoning_policy:       {patterns: ["^(policy|zoning|ordinance|regulation|legislation)\\."], half_life_days: 730}
+  ownership:           {patterns: ["^(parcel|property)\\.(owner|sale)", "^org\\.(parent|acquired)"], half_life_days: 365}
+  water_power:         {patterns: ["^(water|power|utility)\\."],                 half_life_days: 365, tolerance_rel: 0.05}
+  tourism:             {patterns: ["^tourism\\."],                               half_life_days: 60,  tolerance_rel: 0.02}
+  indicator:           {patterns: ["^indicator:"],                               half_life_days: 60,  tolerance_rel: 0.0}
+  event:               {patterns: ["^event\\."],                                 half_life_days: 365}
+default:               {half_life_days: 180, tolerance_rel: 0.02}
+confidence_cap: 0.95

@@ -1,0 +1,6 @@
+y1_statefips,y1_countyfips,y2_statefips,y2_countyfips,y2_state,y2_countyname,n1,n2,agi
+01,001,57,009,FR,Foreign - Other flows,-1,-1,-1
+04,013,96,000,AZ,Maricopa County Total Migration-US and Foreign,65999,127556,3301750
+04,013,04,021,AZ,Pinal County,5679,12858,225192
+04,021,96,000,AZ,Pinal County Total Migration-US and Foreign,12356,27675,535804
+56,039,96,000,WY,Teton County Total Migration-US and Foreign,1111,1664,45387

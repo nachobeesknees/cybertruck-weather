@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Test Local News</title><link>https://news.test/</link>
+<item><title>Council approves rezoning</title><link>https://news.test/news/1</link><guid>n1</guid><pubDate>Mon, 03 Nov 2026 10:00:00 GMT</pubDate><description>Council approved a 320-unit complex.</description></item>
+<item><title>Old story already stored</title><link>https://news.test/news/2</link><guid>n2</guid><pubDate>Sun, 02 Nov 2026 10:00:00 GMT</pubDate></item>
+<item><title>Sports: Suns win</title><link>https://news.test/sports/3</link><guid>n3</guid><pubDate>Tue, 04 Nov 2026 10:00:00 GMT</pubDate></item>
+</channel></rss>

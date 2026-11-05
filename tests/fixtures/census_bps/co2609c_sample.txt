@@ -1,0 +1,9 @@
+Survey,FIPS,FIPS,Region,Division,County,,1-unit,,,2-units,,,3-4 units,,,5+ units,,,1-unit rep,,,2-units rep,,,3-4 units rep,,, 5+units rep
+Date,State,County,Code,Code,Name,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value
+ 
+202609,04,013,4,8,Maricopa County                                             ,904,904,324932957,10,20,6423650,4,15,3843177,9,106,21735323,891,891,321712489,9,18,6163970,4,15,3843177,8,58,13346764
+202609,04,021,4,8,Pinal County                                                ,398,398,94010670,7,14,2234595,0,0,0,2,19,2893226,295,295,65784944,6,12,1637649,0,0,0,0,0,0
+202609,08,073,4,8,Lincoln County                                              ,1,1,323221,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+202609,16,081,4,8,Teton County                                                ,18,18,10448070,0,0,0,0,0,0,2,10,1543141,14,14,9087015,0,0,0,0,0,0,0,0,0
+202609,56,023,4,8,Lincoln County                                              ,19,19,5527120,0,0,0,0,0,0,0,0,0,19,19,5527120,0,0,0,0,0,0,0,0,0
+202609,56,039,4,8,Teton County                                                ,6,6,16069862,0,0,0,0,0,0,0,0,0,1,1,2250000,0,0,0,0,0,0,0,0,0

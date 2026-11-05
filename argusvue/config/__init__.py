@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -121,6 +122,8 @@ class SubmarketsFile(BaseModel):
 class ModelsFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     roles: dict[str, str]
+    pricing: dict[str, Any] = Field(default_factory=dict)
+    effort: dict[str, str] = Field(default_factory=dict)
 
 
 def _read_yaml(path: Path) -> dict:

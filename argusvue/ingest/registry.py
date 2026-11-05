@@ -12,6 +12,8 @@ import yaml
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from argusvue.collect.base import MonitorConfig
+from argusvue.collect.fetcher import registrable_domain
 from argusvue.ingest.base import FREQUENCIES, StructuredSource
 from argusvue.settings import CONFIG_DIR
 
@@ -106,6 +108,42 @@ def load_indicators(path: Path = CONFIG_DIR / "indicators.yaml") -> dict[str, In
     return out
 
 
+MONITOR_KINDS = {"feed": "feed", "page": "web_monitor", "search": "search", "url": "own_fetch"}
+CADENCES = {"hourly": "1 hour", "daily": "1 day", "weekly": "7 days"}
+
+
+@lru_cache
+def load_monitors(path: Path = CONFIG_DIR / "monitors.yaml") -> dict[str, MonitorConfig]:
+    raw = _read_yaml(path).get("monitors") or {}
+    out: dict[str, MonitorConfig] = {}
+    regions = set(_read_yaml(CONFIG_DIR / "regions.yaml").get("regions") or {})
+    for mid, body in raw.items():
+        body = dict(body or {})
+        m = MonitorConfig(id=mid, **body)
+        if m.region not in regions:
+            raise ValueError(f"monitor {mid}: unknown region {m.region!r}")
+        if m.kind not in MONITOR_KINDS:
+            raise ValueError(f"monitor {mid}: kind must be one of {sorted(MONITOR_KINDS)}")
+        if m.cadence not in CADENCES:
+            raise ValueError(f"monitor {mid}: cadence must be one of {sorted(CADENCES)}")
+        if not 0 <= m.reliability <= 1:
+            raise ValueError(f"monitor {mid}: reliability must be within [0, 1]")
+        out[mid] = m
+    return out
+
+
+def monitor_as_source(m: MonitorConfig) -> SourceConfig:
+    from urllib.parse import urlparse
+
+    origin = m.origin_key or (registrable_domain(urlparse(m.target).netloc) if m.kind != "search" else f"search:{m.id}")
+    return SourceConfig(slug=m.id, name=f"[{m.kind}] {m.id}", kind=MONITOR_KINDS[m.kind], origin_key=origin,
+                        url=m.target if m.kind != "search" else None, cadence=CADENCES[m.cadence], reliability=m.reliability,
+                        license_note=m.notes, regions=[m.region], module=None,
+                        config={"kind": m.kind, "target": m.target, "tags": m.tags, "paywall": m.paywall,
+                                "allow_patterns": m.allow_patterns, "deny_patterns": m.deny_patterns, "domains": m.domains,
+                                "max_items": m.max_items, "geo_scope": m.geo_scope})
+
+
 def source(slug: str) -> SourceConfig:
     sources = load_sources()
     if slug not in sources:
@@ -128,7 +166,7 @@ def upsert_source(conn: psycopg.Connection, s: SourceConfig) -> None:
     with conn.cursor() as cur:
         cur.execute(
                 """INSERT INTO sources(slug, name, kind, region_id, url, cadence, reliability, license_note, origin_key, active, config)
-                   VALUES (%s, %s, %s, %s, %s, %s::interval, %s, %s, %s, %s, %s)
+                   VALUES (%s, %s, %s, (SELECT id FROM regions WHERE id = %s), %s, %s::interval, %s, %s, %s, %s, %s)
                    ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name, kind=EXCLUDED.kind, region_id=EXCLUDED.region_id,
                      url=EXCLUDED.url, cadence=EXCLUDED.cadence, reliability=EXCLUDED.reliability,
                      license_note=EXCLUDED.license_note, origin_key=EXCLUDED.origin_key, active=EXCLUDED.active,
@@ -142,7 +180,8 @@ def sync(conn: psycopg.Connection, extra_sources: list[SourceConfig] | None = No
     """Upsert sources and indicators from config. Safe to run before every ingest."""
     sources = load_sources()
     indicators = load_indicators()
-    for s in list(sources.values()) + list(extra_sources or []):
+    monitors = [monitor_as_source(m) for m in load_monitors().values()]
+    for s in list(sources.values()) + monitors + list(extra_sources or []):
         upsert_source(conn, s)
     with conn.cursor() as cur:
         for i in indicators.values():
@@ -157,4 +196,4 @@ def sync(conn: psycopg.Connection, extra_sources: list[SourceConfig] | None = No
                 (i.id, i.name, i.unit, i.direction_good, i.half_life_days, i.source, i.regions, i.frequency,
                  i.description, i.low_confidence, Jsonb(i.config)),
             )
-    return {"sources": len(sources), "indicators": len(indicators)}
+    return {"sources": len(sources), "monitors": len(monitors), "indicators": len(indicators)}

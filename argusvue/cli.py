@@ -15,10 +15,18 @@ db_app = typer.Typer(no_args_is_help=True, help="Database")
 geo_app = typer.Typer(no_args_is_help=True, help="Geography")
 indicators_app = typer.Typer(no_args_is_help=True, help="Indicator series")
 sources_app = typer.Typer(no_args_is_help=True, help="Sources")
+collect_app = typer.Typer(no_args_is_help=True, help="Web monitors and collectors")
+scheduler_app = typer.Typer(no_args_is_help=True, help="Scheduler")
+reconcile_app = typer.Typer(no_args_is_help=True, help="Claim reconciliation")
+conflicts_app = typer.Typer(no_args_is_help=True, help="Contested claims")
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
 app.add_typer(indicators_app, name="indicators")
 app.add_typer(sources_app, name="sources")
+app.add_typer(collect_app, name="collect")
+app.add_typer(scheduler_app, name="scheduler")
+app.add_typer(reconcile_app, name="reconcile")
+app.add_typer(conflicts_app, name="conflicts")
 console = Console()
 
 
@@ -202,11 +210,150 @@ def sources_list() -> None:
     console.print(t)
 
 
+@collect_app.command("run")
+def collect_run(
+    region: str = typer.Option(..., "--region"),
+    source: str = typer.Option(None, "--source", help="Run one monitor id"),
+    kind: str = typer.Option(None, "--kind", help="feed|page|search|url"),
+    all_monitors: bool = typer.Option(False, "--all", help="Ignore the attention ledger's next_due_at"),
+    max_items: int = typer.Option(None, "--max-items"),
+) -> None:
+    """Run the region's due monitors (or one), store new documents, update the attention ledger."""
+    from argusvue.collect.base import Budget
+    from argusvue.collect.runner import due_monitors, run_monitor
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        monitors = due_monitors(conn, region, only=source, kind=kind, all_monitors=all_monitors)
+    t = Table(title=f"collect {region}")
+    for col in ("monitor", "kind", "new", "exact dup", "near dup", "unchanged", "errors", "cost", "ok"):
+        t.add_column(col)
+    failures = 0
+    for m in monitors:
+        try:
+            with connection() as conn:
+                st = run_monitor(conn, m, budget=Budget(max_items=max_items or m.max_items))
+            t.add_row(m.id, m.kind, str(st["new"]), str(st["exact_dup"]), str(st["near_dup"]), str(st["unchanged"]),
+                      str(len(st["errors"])), f"{st['cost_usd']:.3f}", "yes")
+        except Exception as e:
+            failures += 1
+            logging.getLogger("argusvue.cli").exception("monitor %s failed", m.id)
+            t.add_row(m.id, m.kind, "", "", "", "", "", "", f"[red]FAILED: {type(e).__name__}[/red]")
+    console.print(t)
+    if not monitors:
+        console.print("nothing due (use --all to force)")
+    if failures:
+        raise typer.Exit(code=1)
+
+
+@collect_app.command("status")
+def collect_status(region: str = typer.Option(..., "--region")) -> None:
+    """Attention ledger: last check, result and next due time per monitor."""
+    from argusvue.store.db import connection, fetch_all
+
+    with connection() as conn:
+        rows = fetch_all(conn, """SELECT s.slug, s.kind, l.last_checked_at, l.last_result, l.next_due_at, l.checks, l.new_docs
+                                  FROM attention_ledger l JOIN sources s ON s.id = l.source_id
+                                  WHERE s.region_id = %s ORDER BY s.slug""", (region,))
+    t = Table(title=f"attention ledger {region}")
+    for col in ("monitor", "kind", "last checked", "result", "next due", "checks", "new docs"):
+        t.add_column(col)
+    for r in rows:
+        t.add_row(r["slug"], r["kind"], r["last_checked_at"].strftime("%m-%d %H:%M") if r["last_checked_at"] else "",
+                  r["last_result"] or "", r["next_due_at"].strftime("%m-%d %H:%M") if r["next_due_at"] else "",
+                  str(r["checks"]), str(r["new_docs"]))
+    console.print(t)
+
+
+@reconcile_app.command("run")
+def reconcile_run(region: str = typer.Option(None, "--region"),
+                  include_structured: bool = typer.Option(False, "--include-structured")) -> None:
+    """Reconcile unreconciled claims: corroborate / merge / contest / supersede (SPEC §6)."""
+    from argusvue.reconcile.engine import run_reconcile, set_half_lives
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        filled = set_half_lives(conn)
+        st = run_reconcile(conn, region_id=region, include_structured=include_structured)
+    console.print({k: v for k, v in st.items()} | {"half_lives_filled": filled})
+
+
+@conflicts_app.command("list")
+def conflicts_list(region: str = typer.Option(None, "--region"), show_all: bool = typer.Option(False, "--all")) -> None:
+    """Open conflicts between contested claims."""
+    from argusvue.store.db import connection, fetch_all
+
+    with connection() as conn:
+        rows = fetch_all(conn, """SELECT k.id, k.kind, k.opened_at, k.resolved_at, k.resolution, k.attempts, k.geo_key,
+                                         a.predicate, a.value_num AS a_num, a.value_text AS a_text, a.document_id AS a_doc,
+                                         b.value_num AS b_num, b.value_text AS b_text, b.document_id AS b_doc, k.claim_a, k.claim_b
+                                  FROM conflicts k JOIN claims a ON a.id = k.claim_a JOIN claims b ON b.id = k.claim_b
+                                  WHERE (%s::text IS NULL OR k.region_id = %s) AND (%s OR k.resolved_at IS NULL)
+                                  ORDER BY k.opened_at DESC LIMIT 200""", (region, region, show_all))
+    t = Table(title="conflicts")
+    for col in ("id", "kind", "predicate", "geo", "claim a", "claim b", "opened", "status", "attempts"):
+        t.add_column(col)
+    for r in rows:
+        va = r["a_text"] if r["a_text"] is not None else r["a_num"]
+        vb = r["b_text"] if r["b_text"] is not None else r["b_num"]
+        t.add_row(str(r["id"]), r["kind"], r["predicate"], r["geo_key"] or "", f"c:{r['claim_a']}={va} (d:{r['a_doc']})",
+                  f"c:{r['claim_b']}={vb} (d:{r['b_doc']})", r["opened_at"].strftime("%Y-%m-%d"),
+                  r["resolution"] or "open", str(r["attempts"]))
+    console.print(t)
+
+
+@conflicts_app.command("resolve")
+def conflicts_resolve(conflict_id: int = typer.Argument(...),
+                      keep: str = typer.Option(..., "--keep", help="a | b | both | neither"),
+                      note: str = typer.Option("", "--note")) -> None:
+    """Resolve a conflict by hand: the kept claim(s) return to asserted, the other is retracted."""
+    from argusvue.store.db import connection, execute, fetch_one
+
+    if keep not in ("a", "b", "both", "neither"):
+        raise typer.BadParameter("--keep must be a, b, both or neither")
+    with connection() as conn:
+        k = fetch_one(conn, "SELECT * FROM conflicts WHERE id = %s", (conflict_id,))
+        if k is None:
+            raise typer.BadParameter(f"no conflict {conflict_id}")
+        a, b = k["claim_a"], k["claim_b"]
+        keep_ids = {"a": [a], "b": [b], "both": [a, b], "neither": []}[keep]
+        drop_ids = [c for c in (a, b) if c not in keep_ids]
+        if keep_ids:
+            execute(conn, "UPDATE claims SET status = 'asserted' WHERE id = ANY(%s) AND status = 'contested'", (keep_ids,))
+        if drop_ids:
+            execute(conn, "UPDATE claims SET status = 'retracted' WHERE id = ANY(%s)", (drop_ids,))
+        resolution = {"a": "keep_a", "b": "keep_b", "both": "both_valid", "neither": "retract_both"}[keep]
+        execute(conn, "UPDATE conflicts SET resolved_at = now(), resolution = %s, notes = %s WHERE id = %s",
+                (resolution, note or None, conflict_id))
+    console.print(f"conflict {conflict_id}: {resolution}")
+
+
+@scheduler_app.command("start")
+def scheduler_start() -> None:
+    """Run the in-process scheduler (blocking)."""
+    from argusvue.scheduler import start
+
+    start()
+
+
 @app.command("spend")
-def spend() -> None:
-    """Today's LLM/collector spend against the cap. (Ledger arrives with phase 2.)"""
+def spend(days: int = typer.Option(7, "--days")) -> None:
+    """Spend per local day and role against the daily cap."""
+    from argusvue.store.db import connection, fetch_all
+
     s = get_settings()
-    console.print(f"cap: ${s.daily_spend_cap_usd:.2f}/day; spend ledger not yet implemented (phase 2)")
+    with connection() as conn:
+        rows = fetch_all(conn, """SELECT day, role, model, calls, input_tokens, output_tokens, search_uses, cost_usd
+                                  FROM spend_daily WHERE day >= current_date - %s ORDER BY day DESC, cost_usd DESC""", (days,))
+    t = Table(title=f"spend (cap ${s.daily_spend_cap_usd:.2f}/day, {s.timezone})")
+    for col in ("day", "role", "model", "calls", "in", "out", "searches", "usd"):
+        t.add_column(col, justify="right" if col not in ("day", "role", "model") else "left")
+    for r in rows:
+        t.add_row(str(r["day"]), r["role"], r["model"], str(r["calls"]), str(r["input_tokens"]), str(r["output_tokens"]),
+                  str(r["search_uses"]), f"{float(r['cost_usd']):.4f}")
+    console.print(t)
+    if not rows:
+        console.print("no paid calls yet")
 
 
 if __name__ == "__main__":

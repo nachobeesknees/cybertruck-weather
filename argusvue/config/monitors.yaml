@@ -1,0 +1,5 @@
+# Web monitors we poll ourselves (no third-party monitoring service). Each becomes a `sources` row.
+# kind: feed (RSS/Atom) | page (index page with links) | search (Claude web search objective) | url
+# cadence: hourly | daily | weekly. reliability feeds claim confidence. Populated from the 2026-11-05
+# feed research; see docs/DECISIONS.md.
+monitors: {}
