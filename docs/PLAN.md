@@ -1,7 +1,7 @@
 # Argusvue — PLAN
 
-Status: **phase 0 complete (2026-11-05).** Questions in §3 were resolved by their defaults; the owner chose
-own collection agents over Parallel/Exa. Both recorded in `docs/DECISIONS.md`. Next: phase 1.
+Status: **all five phases built and tested (2026-11-05); live LLM steps await `ANTHROPIC_API_KEY`.** Questions in §3
+were resolved by their defaults; the owner chose own collection agents over Parallel/Exa. See `docs/PROGRESS.md`.
 
 ## 1. My understanding
 
