@@ -53,6 +53,13 @@ class MonitorConfig:
     notes: str | None = None
     domains: list[str] = field(default_factory=list)          # search: allowed domains
     geo_scope: str | None = None
+    keywords: list[str] = field(default_factory=list)         # feed/json: fetch an item only if title/summary matches one
+    ai_bot_rule: bool = False                                  # host robots.txt names AI crawlers (not our UA); see DECISIONS
+    json_items: str = ""                                       # json: key holding the item list ('' = root list, 'value' = OData)
+    json_link_keys: list[str] = field(default_factory=list)   # json: item keys whose values are document URLs
+    json_date_key: str | None = None                           # json: item date key (ISO)
+    json_title_keys: list[str] = field(default_factory=list)
+    max_age_days: int = 60                                     # json: ignore items older than this (and future placeholders)
 
 
 class Collector(ABC):

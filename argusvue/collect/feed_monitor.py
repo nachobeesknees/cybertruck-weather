@@ -32,11 +32,12 @@ class FeedMonitor(Collector):
     kind = "feed"
 
     def __init__(self, fetcher: Fetcher, *, seen: Callable[[str], bool], allow: list[str] | None = None,
-                 deny: list[str] | None = None, state: dict | None = None):
+                 deny: list[str] | None = None, state: dict | None = None, keywords: list[str] | None = None):
         self.fetcher = fetcher
         self.seen = seen
         self.allow = [re.compile(p) for p in (allow or [])]
         self.deny = [re.compile(p) for p in (deny or [])]
+        self.keywords = [k.lower() for k in (keywords or [])]
         self.state = state if state is not None else {}
         self.errors: list[str] = []
         self.entries_seen = 0
@@ -63,6 +64,10 @@ class FeedMonitor(Collector):
             link = e.get("link")
             if not link or not self._ok(link):
                 continue
+            if self.keywords:
+                hay = f"{e.get('title', '')} {e.get('summary', '')}".lower()
+                if not any(k in hay for k in self.keywords):
+                    continue
             self.entries_seen += 1
             if self.seen(link):
                 continue

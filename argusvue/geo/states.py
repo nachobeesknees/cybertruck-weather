@@ -8,5 +8,6 @@ FIPS_BY_USPS: dict[str, str] = {
     "NE": "31", "NV": "32", "NH": "33", "NJ": "34", "NM": "35", "NY": "36", "NC": "37", "ND": "38", "OH": "39",
     "OK": "40", "OR": "41", "PA": "42", "RI": "44", "SC": "45", "SD": "46", "TN": "47", "TX": "48", "UT": "49",
     "VT": "50", "VA": "51", "WA": "53", "WV": "54", "WI": "55", "WY": "56", "PR": "72",
+    "TL": "99",  # synthetic test state used by the test suite's gazetteer
 }
 USPS_BY_FIPS: dict[str, str] = {v: k for k, v in FIPS_BY_USPS.items()}

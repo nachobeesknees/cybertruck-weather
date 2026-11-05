@@ -108,7 +108,7 @@ def load_indicators(path: Path = CONFIG_DIR / "indicators.yaml") -> dict[str, In
     return out
 
 
-MONITOR_KINDS = {"feed": "feed", "page": "web_monitor", "search": "search", "url": "own_fetch"}
+MONITOR_KINDS = {"feed": "feed", "page": "web_monitor", "json": "web_monitor", "search": "search", "url": "own_fetch"}
 CADENCES = {"hourly": "1 hour", "daily": "1 day", "weekly": "7 days"}
 
 
@@ -139,9 +139,11 @@ def monitor_as_source(m: MonitorConfig) -> SourceConfig:
     return SourceConfig(slug=m.id, name=f"[{m.kind}] {m.id}", kind=MONITOR_KINDS[m.kind], origin_key=origin,
                         url=m.target if m.kind != "search" else None, cadence=CADENCES[m.cadence], reliability=m.reliability,
                         license_note=m.notes, regions=[m.region], module=None,
+                        robots_disallowed=m.ai_bot_rule,
                         config={"kind": m.kind, "target": m.target, "tags": m.tags, "paywall": m.paywall,
                                 "allow_patterns": m.allow_patterns, "deny_patterns": m.deny_patterns, "domains": m.domains,
-                                "max_items": m.max_items, "geo_scope": m.geo_scope})
+                                "max_items": m.max_items, "geo_scope": m.geo_scope, "keywords": m.keywords,
+                                "ai_bot_rule": m.ai_bot_rule})
 
 
 def source(slug: str) -> SourceConfig:

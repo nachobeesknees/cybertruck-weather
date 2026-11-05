@@ -122,3 +122,49 @@ def test_runner_stores_dedups_and_updates_ledger(synthetic, tmp_path, monkeypatc
     # due_monitors respects next_due_at
     assert cr.due_monitors(synthetic, "tst") == []
     assert [m.id for m in cr.due_monitors(synthetic, "tst", all_monitors=True)] == ["tst-news-feed", "tst-wire-page"]
+
+
+def test_json_monitor_fetches_agenda_files_within_age_window():
+    from datetime import UTC, datetime, timedelta
+
+    from argusvue.collect.json_monitor import JsonListMonitor
+
+    recent = (datetime.now(UTC) - timedelta(days=3)).strftime("%Y-%m-%dT00:00:00")
+    old = (datetime.now(UTC) - timedelta(days=400)).strftime("%Y-%m-%dT00:00:00")
+    future = (datetime.now(UTC) + timedelta(days=200)).strftime("%Y-%m-%dT00:00:00")
+    listing = [
+        {"EventId": 1, "EventBodyName": "City Council Formal Meeting", "EventDate": recent,
+         "EventAgendaFile": "https://agendas.test/AgendaCenter/ViewFile/Agenda/_11032026-100", "EventMinutesFile": None},
+        {"EventId": 2, "EventBodyName": "City Council", "EventDate": old, "EventAgendaFile": "https://agendas.test/old.pdf"},
+        {"EventId": 3, "EventBodyName": "City Council", "EventDate": future, "EventAgendaFile": "https://agendas.test/future.pdf"},
+    ]
+    import json as _json
+
+    pages = {**PAGES, "api.test/v1/phoenix/events": _json.dumps(listing)}
+    f = _fetcher(pages)
+    mon = JsonListMonitor(f, seen=lambda u: False, items="", link_keys=["EventAgendaFile", "EventMinutesFile"],
+                          date_key="EventDate", title_keys=["EventBodyName", "EventDate"], max_age_days=45)
+    docs = mon.run("https://api.test/v1/phoenix/events", None, None, Budget(max_items=5))
+    assert [d.url for d in docs] == ["https://agendas.test/AgendaCenter/ViewFile/Agenda/_11032026-100"]
+    assert docs[0].title == "Agenda Nov 3" and docs[0].meta["json_item"]["EventBodyName"] == "City Council Formal Meeting"
+
+
+def test_feed_keywords_filter_entries():
+    f = _fetcher(PAGES)
+    mon = FeedMonitor(f, seen=lambda u: False, keywords=["rezoning"])
+    docs = mon.run("https://news.test/feed.xml", None, None, Budget(max_items=10))
+    assert [d.url for d in docs] == ["https://news.test/news/1"]
+
+
+def test_monitors_config_loads_and_meets_phase2_counts():
+    from argusvue.ingest import registry
+
+    registry.load_monitors.cache_clear()
+    mons = registry.load_monitors()
+    by_region = {}
+    for m in mons.values():
+        by_region.setdefault(m.region, []).append(m)
+    assert len(by_region["phx"]) >= 30 and len(by_region["jh"]) >= 15
+    assert all(m.kind in registry.MONITOR_KINDS and m.cadence in registry.CADENCES for m in mons.values())
+    src = registry.monitor_as_source(mons["phx-azmirror"])
+    assert src.robots_disallowed is True and src.origin_key == "azmirror.com" and src.kind == "feed"

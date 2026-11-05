@@ -106,12 +106,15 @@ def synthetic(db):
         cur.execute(
             "INSERT INTO cbsa_counties VALUES ('99001','99999','Test, XX','Metropolitan Statistical Area','Central','test')"
         )
+        names = {"county:99001": "Test County", "county:99002": "Far County", "place:9900001": "Testville city",
+                 "state:99": "Testland", "cbsa:99999": "Testville, TL"}
         for key, level, code, wkt in SYNTHETIC_UNITS:
             cur.execute(
-                """INSERT INTO geo_units(geo_key, level, code, name, region_id, geom, vintage)
+                """INSERT INTO geo_units(geo_key, level, code, name, region_id, geom, vintage, attrs)
                    VALUES (%s, %s, %s, %s, CASE WHEN %s IN ('county','place','zcta','tract') THEN 'tst' END,
-                           ST_SetSRID(ST_GeomFromText(%s), 4326), 'test')""",
-                (key, level, code, key, level, wkt),
+                           ST_SetSRID(ST_GeomFromText(%s), 4326), 'test', %s::jsonb)""",
+                (key, level, code, names.get(key, key), level, wkt,
+                 '{"short_name": "Testville"}' if key == "place:9900001" else "{}"),
             )
         derive_attributes(db)
         cur.execute(

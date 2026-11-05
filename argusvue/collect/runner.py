@@ -14,6 +14,7 @@ from psycopg.types.json import Jsonb
 from argusvue.collect.base import Budget, MonitorConfig
 from argusvue.collect.feed_monitor import FeedMonitor
 from argusvue.collect.fetcher import Fetcher, RobotsDisallowed
+from argusvue.collect.json_monitor import JsonListMonitor
 from argusvue.collect.own_fetch import UrlCollector
 from argusvue.collect.page_monitor import PageMonitor
 from argusvue.collect.search import SearchCollector
@@ -62,7 +63,12 @@ def _ledger_update(conn, source_id: int, target: str, result: str, cadence: str,
 def make_collector(conn, monitor: MonitorConfig, fetcher: Fetcher, state: dict, *, store=None, client=None):
     seen = lambda url: url_seen(conn, url)
     if monitor.kind == "feed":
-        return FeedMonitor(fetcher, seen=seen, allow=monitor.allow_patterns, deny=monitor.deny_patterns, state=state)
+        return FeedMonitor(fetcher, seen=seen, allow=monitor.allow_patterns, deny=monitor.deny_patterns, state=state,
+                           keywords=monitor.keywords)
+    if monitor.kind == "json":
+        return JsonListMonitor(fetcher, seen=seen, items=monitor.json_items, link_keys=monitor.json_link_keys,
+                               date_key=monitor.json_date_key, title_keys=monitor.json_title_keys, keywords=monitor.keywords,
+                               max_age_days=monitor.max_age_days, state=state)
     if monitor.kind == "page":
         return PageMonitor(fetcher, seen=seen, allow=monitor.allow_patterns, deny=monitor.deny_patterns, state=state)
     if monitor.kind == "search":
@@ -75,6 +81,10 @@ def make_collector(conn, monitor: MonitorConfig, fetcher: Fetcher, state: dict, 
 
 def run_monitor(conn: psycopg.Connection, monitor: MonitorConfig, *, fetcher: Fetcher | None = None,
                 store: BlobStore | None = None, budget: Budget | None = None, client=None) -> dict[str, Any]:
+    from argusvue.settings import get_settings
+
+    if monitor.ai_bot_rule and get_settings().strict_robots:
+        raise RobotsDisallowed(f"monitor {monitor.id}: host names AI crawlers in robots.txt and STRICT_ROBOTS is on")
     registry.sync(conn)
     conn.commit()
     with conn.cursor() as cur:

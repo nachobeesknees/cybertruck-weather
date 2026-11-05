@@ -19,6 +19,8 @@ collect_app = typer.Typer(no_args_is_help=True, help="Web monitors and collector
 scheduler_app = typer.Typer(no_args_is_help=True, help="Scheduler")
 reconcile_app = typer.Typer(no_args_is_help=True, help="Claim reconciliation")
 conflicts_app = typer.Typer(no_args_is_help=True, help="Contested claims")
+extract_app = typer.Typer(no_args_is_help=True, help="Claim extraction from documents")
+eval_app = typer.Typer(no_args_is_help=True, help="Evaluation harness")
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
 app.add_typer(indicators_app, name="indicators")
@@ -27,6 +29,8 @@ app.add_typer(collect_app, name="collect")
 app.add_typer(scheduler_app, name="scheduler")
 app.add_typer(reconcile_app, name="reconcile")
 app.add_typer(conflicts_app, name="conflicts")
+app.add_typer(extract_app, name="extract")
+app.add_typer(eval_app, name="eval")
 console = Console()
 
 
@@ -263,6 +267,36 @@ def collect_status(region: str = typer.Option(..., "--region")) -> None:
                   r["last_result"] or "", r["next_due_at"].strftime("%m-%d %H:%M") if r["next_due_at"] else "",
                   str(r["checks"]), str(r["new_docs"]))
     console.print(t)
+
+
+@extract_app.command("run")
+def extract_run(region: str = typer.Option(None, "--region"), limit: int = typer.Option(50, "--limit"),
+                document: int = typer.Option(None, "--document", help="Extract one document id"),
+                force: bool = typer.Option(False, "--force")) -> None:
+    """Extract cited claims from collected web documents (skips duplicates and structured downloads)."""
+    from argusvue.extract.extractor import extract_document, run_extract
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        if document is not None:
+            st = extract_document(conn, document, force=force)
+            console.print(st.__dict__)
+        else:
+            console.print(run_extract(conn, region_id=region, limit=limit, force=force))
+
+
+@eval_app.command("precision")
+def eval_precision(sample_n: int = typer.Option(0, "--sample", help="Write a new audit CSV with N claims"),
+                   region: str = typer.Option(None, "--region"), since_days: int = typer.Option(7, "--since-days")) -> None:
+    """Sample claims for human labelling (--sample N) and report precision from labelled audit files."""
+    from argusvue.eval import precision
+    from argusvue.store.db import connection
+
+    if sample_n:
+        with connection() as conn:
+            path = precision.sample(conn, n=sample_n, since_days=since_days, region_id=region)
+        console.print(f"wrote {path}")
+    console.print(precision.compute())
 
 
 @reconcile_app.command("run")

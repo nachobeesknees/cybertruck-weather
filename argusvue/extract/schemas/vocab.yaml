@@ -1,0 +1,65 @@
+# Predicate vocabulary per domain (SPEC §6 extract/schemas). value: num | text | entity | date
+housing:
+  project.units:              {value: num,  unit: units, desc: "housing units in a project (planned, approved or built)"}
+  project.status:             {value: text, desc: "proposed | applied | approved | denied | under_construction | completed | cancelled | on_hold"}
+  project.investment_usd:     {value: num,  unit: USD}
+  project.completion_date:    {value: date, desc: "expected or actual completion"}
+  project.developer:          {value: entity, desc: "object = the developer organisation"}
+  project.sqft:               {value: num, unit: sqft}
+  project.acres:              {value: num, unit: acres}
+  project.lots:               {value: num, unit: lots}
+  listing.price:              {value: num, unit: USD}
+  listing.rent:               {value: num, unit: USD_per_month}
+  listing.status:             {value: text}
+  housing.deed_restricted_units: {value: num, unit: units}
+  housing.waitlist_length:    {value: num, unit: households}
+  housing.lottery_applicants: {value: num, unit: applicants}
+  housing.median_sale_price:  {value: num, unit: USD, desc: "as reported by a public market report; cite only"}
+  housing.inventory:          {value: num, unit: listings}
+  housing.days_on_market:     {value: num, unit: days}
+  housing.rent_concession:    {value: text}
+employment:
+  org.jobs_announced:         {value: num, unit: jobs}
+  org.jobs_cut:               {value: num, unit: jobs}
+  org.employees:              {value: num, unit: jobs}
+  org.investment_usd:         {value: num, unit: USD}
+  org.facility_status:        {value: text, desc: "announced | permitted | under_construction | operating | paused | closed"}
+  org.expansion:              {value: text}
+  org.location:               {value: text, desc: "place of a facility or HQ"}
+policy:
+  policy.decision:            {value: text, desc: "approved | denied | tabled | continued | adopted | repealed"}
+  policy.vote:                {value: text, desc: "e.g. 5-2"}
+  policy.effective_date:      {value: date}
+  zoning.decision:            {value: text}
+  zoning.case:                {value: text}
+  ordinance.status:           {value: text}
+  legislation.status:         {value: text, desc: "introduced | passed_committee | passed | signed | vetoed | failed"}
+  tax.rate:                   {value: num, unit: pct}
+  tax.collection_usd:         {value: num, unit: USD}
+  policy.moratorium:          {value: text}
+  str.regulation:             {value: text, desc: "short-term rental rule change"}
+infrastructure:
+  power.capacity_mw:          {value: num, unit: MW}
+  power.request_mw:           {value: num, unit: MW}
+  power.decision:             {value: text}
+  transmission.status:        {value: text}
+  datacenter.capacity_mw:     {value: num, unit: MW}
+  datacenter.investment_usd:  {value: num, unit: USD}
+  datacenter.status:          {value: text}
+  road.closure:               {value: text, desc: "closure start/end or status of a named road or pass"}
+  road.status:                {value: text}
+  transit.ridership:          {value: num, unit: riders}
+water:
+  water.determination:        {value: text, desc: "assured water supply determination: issued | denied | pending | revoked"}
+  water.supply_acre_feet:     {value: num, unit: acre_feet}
+  water.policy:               {value: text}
+  water.groundwater_status:   {value: text}
+  water.allocation_cut_pct:   {value: num, unit: pct}
+tourism:
+  tourism.visits:             {value: num, unit: visits}
+  tourism.enplanements:       {value: num, unit: passengers}
+  tourism.lodging_tax_usd:    {value: num, unit: USD}
+  tourism.occupancy_pct:      {value: num, unit: pct}
+  tourism.adr_usd:            {value: num, unit: USD}
+  tourism.event:              {value: text}
+  tourism.snowpack_pct:       {value: num, unit: pct_of_median}
