@@ -1,3 +1,11 @@
+# Argusvue (branch `argusvue`)
+
+This branch carries the Argusvue pilot: a source-traceable model of the Phoenix and Jackson real
+estate markets. Start with `docs/SPEC.md`, then `docs/DEMO.md` for runnable commands. The weather
+dashboard below is the original contents of this repository and is untouched.
+
+---
+
 # Cybertruck Weather Dashboard
 
 One file (`index.html`), no build step, no API keys. Data sources: RainViewer and LibreWXR radar, LibreWXR GOES satellite, Open-Meteo conditions and wind, NWS alerts, and the SPC Day 1 outlook.

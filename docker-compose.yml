@@ -1,0 +1,21 @@
+services:
+  db:
+    build:
+      context: ./docker
+      dockerfile: postgres.Dockerfile
+    environment:
+      POSTGRES_USER: argusvue
+      POSTGRES_PASSWORD: argusvue
+      POSTGRES_DB: argusvue
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argusvue -d argusvue"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  pgdata:

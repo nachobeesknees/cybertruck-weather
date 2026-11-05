@@ -1,0 +1,51 @@
+# Regions are sets of counties plus a CBSA. Codes only; names come from the gazetteer at load time.
+# `places` are Census place FIPS codes (PLACEFP, 5 digits) within the region's states; verified at load.
+# `commuter_shed_counties` are included in the region but are not part of the CBSA.
+vintage:
+  tiger: TIGER2024
+  delineation: OMB-2023   # list1_2023.xlsx, July 2023 delineations
+regions:
+  phx:
+    cbsa: "38060"
+    states: ["04"]
+    counties: ["04013", "04021"]
+    commuter_shed_counties: []
+    places:
+      - "0455000"   # Phoenix
+      - "0446000"   # Mesa
+      - "0412000"   # Chandler
+      - "0427400"   # Gilbert
+      - "0465000"   # Scottsdale
+      - "0473000"   # Tempe
+      - "0427820"   # Glendale
+      - "0454050"   # Peoria
+      - "0471510"   # Surprise
+      - "0428380"   # Goodyear
+      - "0407940"   # Buckeye
+      - "0458150"   # Queen Creek
+      - "0410530"   # Casa Grande
+      - "0404720"   # Avondale
+      - "0444410"   # Maricopa (city)
+      - "0464210"   # San Tan Valley CDP
+  jh:
+    cbsa: "27220"
+    states: ["56", "16"]
+    counties: ["56039", "16081"]
+    commuter_shed_counties: ["56023"]   # Lincoln County WY (Alpine, Star Valley)
+    places:
+      - "5640120"   # Jackson (town)
+      - "5683765"   # Wilson CDP
+      - "5675935"   # Teton Village CDP
+      - "5654402"   # Moose Wilson Road CDP
+      - "5641860"   # Kelly CDP
+      - "5637945"   # Hoback CDP
+      - "5663100"   # Rafter J Ranch CDP
+      - "5671947"   # South Park CDP
+      - "5601695"   # Alpine (town)
+      - "5625475"   # Etna CDP
+      - "5676370"   # Thayne (town)
+      - "5600245"   # Afton (town)
+      - "5673180"   # Star Valley Ranch (town)
+      - "1684250"   # Victor ID
+      - "1622690"   # Driggs ID
+      - "1680470"   # Tetonia ID

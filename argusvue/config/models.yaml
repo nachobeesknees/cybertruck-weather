@@ -1,0 +1,9 @@
+# Model per role. Verified against docs.claude.com model list (Claude 5 family) on 2026-11-05.
+roles:
+  triage:      claude-haiku-5-5
+  extraction:  claude-sonnet-5-5
+  resolution:  claude-sonnet-5-5
+  entailment:  claude-sonnet-5-5
+  scout:       claude-sonnet-5-5
+  analyst:     claude-opus-5-5
+  critic:      claude-opus-5-5

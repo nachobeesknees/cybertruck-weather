@@ -1,0 +1,53 @@
+# Submarkets are named unions of gazetteer units (zcta: or place: keys). Every member must exist
+# in geo_units for the region or the load fails loudly.
+submarkets:
+  phx-central:
+    region: phx
+    name: Central Phoenix
+    members: [zcta:85003, zcta:85004, zcta:85006, zcta:85007, zcta:85012, zcta:85013, zcta:85014,
+              zcta:85015, zcta:85016, zcta:85018, zcta:85020]
+  phx-north-tsmc:
+    region: phx
+    name: North Phoenix / TSMC corridor
+    # TSMC Arizona campus: 43rd Ave & Dove Valley Rd, ZIP 85085. Neighbours ring the campus.
+    members: [zcta:85085, zcta:85083, zcta:85027, zcta:85310, zcta:85086]
+  phx-east-valley:
+    region: phx
+    name: East Valley
+    members: [place:0473000, place:0412000, place:0427400, place:0446000]   # Tempe, Chandler, Gilbert, Mesa
+  phx-scottsdale:
+    region: phx
+    name: Scottsdale
+    members: [place:0465000]
+  phx-west-valley:
+    region: phx
+    name: West Valley
+    members: [place:0428380, place:0407940, place:0471510, place:0404720]   # Goodyear, Buckeye, Surprise, Avondale
+  phx-pinal:
+    region: phx
+    name: Pinal / Southeast Valley
+    members: [zcta:85142, zcta:85140, zcta:85143, zcta:85122, zcta:85194, zcta:85138, zcta:85139]
+  jh-town:
+    region: jh
+    name: Town of Jackson
+    members: [zcta:83001]
+  jh-wilson:
+    region: jh
+    name: Wilson
+    members: [zcta:83014]
+  jh-teton-village:
+    region: jh
+    name: Teton Village
+    members: [zcta:83025]
+  jh-north:
+    region: jh
+    name: North Jackson Hole (Moose, Moran, Kelly)
+    members: [zcta:83012, zcta:83013, zcta:83011]
+  jh-alpine:
+    region: jh
+    name: Alpine / Star Valley north
+    members: [zcta:83128]
+  jh-teton-valley-id:
+    region: jh
+    name: Teton Valley ID
+    members: [zcta:83455, zcta:83422, zcta:83452]

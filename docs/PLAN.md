@@ -1,6 +1,7 @@
 # Argusvue — PLAN
 
-Status: **waiting for answers to the questions in §3 before writing code.**
+Status: **phase 0 complete (2026-11-05).** Questions in §3 were resolved by their defaults; the owner chose
+own collection agents over Parallel/Exa. Both recorded in `docs/DECISIONS.md`. Next: phase 1.
 
 ## 1. My understanding
 
@@ -8,7 +9,8 @@ Argusvue is a backend that turns public data about a place into an auditable bel
 Four layers, each append-only:
 
 1. **Documents.** Structured downloads (Redfin, Zillow, BLS, Census, state revenue, NPS, SNOTEL…)
-   and open-web pages/PDFs (via Parallel, or an allowlisted own fetcher) are snapshotted to a
+   and open-web pages/PDFs (via our own agents: Claude web search, feed monitors, an allowlisted own
+   fetcher; Parallel/Exa kept as optional adapters) are snapshotted to a
    `BlobStore`, hashed, near-dup'd (simhash), and tagged with an `origin_key` so syndicated copies
    count as one source.
 2. **Claims.** Typed `(subject, predicate, value, geo_key, valid_from/to, observed_at)` facts with a
