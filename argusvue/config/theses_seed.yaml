@@ -1,0 +1,143 @@
+# Seed theses (SPEC §7). All start emerging, confidence <= 0.4, human_status pending, each with at least one
+# machine-checkable falsifier. Falsifier thresholds are resolved at seed time against the latest indicator value
+# (threshold_rel x latest) and by_date = latest period + by_months; the baseline is stored on the falsifier.
+theses:
+  phx-tsmc-corridor:
+    region: phx
+    geo_key: sub:phx-north-tsmc
+    domain: housing
+    statement: >-
+      Demand tied to the TSMC campus and its suppliers is pulling forward home prices and rents in the North Phoenix
+      corridor (ZIPs 85085, 85083, 85027, 85310, 85086) relative to the Phoenix metro as a whole.
+    confidence: 0.35
+    implications:
+      - {text: "Corridor ZHVI should outgrow the metro ZHVI over the next 12 months.", horizon_months: 12}
+    falsifiers:
+      - {indicator_id: zhvi, geo_key: "zcta:85085", operator: "<", threshold_rel: 0.95, by_months: 12, action: review,
+         description: "85085 home values fall 5% from the seed baseline within a year"}
+      - {indicator_id: zori_rent, geo_key: "zcta:85085", operator: "<", threshold_rel: 0.97, by_months: 12, action: downgrade,
+         description: "corridor rents fall 3% within a year"}
+  phx-datacenter-power:
+    region: phx
+    geo_key: cbsa:38060
+    domain: infrastructure
+    statement: >-
+      Data-center buildout in metro Phoenix is colliding with power capacity and local political resistance,
+      slowing approvals and shifting projects to Pinal County and the West Valley.
+    confidence: 0.3
+    falsifiers:
+      - {indicator_id: nonfarm_jobs_construction, geo_key: "cbsa:38060", operator: "<", threshold_rel: 0.93, by_months: 12, action: review,
+         description: "construction employment drops 7% within a year (buildout stalls broadly, not selectively)"}
+  phx-water-lots:
+    region: phx
+    geo_key: sub:phx-west-valley
+    domain: water
+    statement: >-
+      Groundwater and assured-water-supply limits in the Phoenix and Pinal AMAs constrain new lot supply in the
+      West Valley and Pinal County, holding permits below demand.
+    confidence: 0.35
+    falsifiers:
+      - {indicator_id: permits_sf_units, geo_key: "place:0407940", operator: ">", threshold_rel: 1.5, by_months: 12, action: downgrade,
+         description: "Buckeye single-family permits rise 50% above the seed month within a year"}
+      - {indicator_id: permits_sf_units, geo_key: "county:04021", operator: ">", threshold_rel: 1.5, by_months: 12, action: downgrade,
+         description: "Pinal County single-family permits rise 50% above the seed month within a year"}
+  phx-apartment-oversupply:
+    region: phx
+    geo_key: cbsa:38060
+    domain: housing
+    statement: >-
+      Apartment oversupply and concessions are suppressing rent growth across metro Phoenix.
+    confidence: 0.4
+    falsifiers:
+      - {indicator_id: zori_rent, geo_key: "cbsa:38060", operator: ">", threshold_rel: 1.04, by_months: 12, action: downgrade,
+         description: "metro rents rise more than 4% within a year"}
+      - {indicator_id: aptlist_rent_overall, geo_key: "cbsa:38060", operator: ">", threshold_rel: 1.04, by_months: 12, action: downgrade,
+         description: "Apartment List metro rent rises more than 4% within a year"}
+  phx-pricecut-lead:
+    region: phx
+    geo_key: cbsa:38060
+    domain: housing
+    statement: >-
+      Rising price-cut share and days on market lead metro Phoenix sale prices by three to six months.
+    confidence: 0.35
+    causal_edges:
+      - {cause: "price_cut_share", effect: "median_sale_price", mechanism: "sellers mark down before closed prices reflect weaker demand",
+         lag_months: 4, strength: moderate, cause_indicator: price_cut_share, effect_indicator: median_sale_price, geo_key: "cbsa:38060"}
+      - {cause: "median_dom", effect: "median_sale_price", mechanism: "longer marketing times precede price concessions",
+         lag_months: 3, strength: moderate, cause_indicator: median_dom, effect_indicator: median_sale_price, geo_key: "cbsa:38060"}
+    falsifiers:
+      - {indicator_id: median_sale_price, geo_key: "cbsa:38060", operator: ">", threshold_rel: 1.05, by_months: 9, action: downgrade,
+         description: "metro median sale price rises 5% within nine months despite elevated price cuts"}
+  phx-migration-slowdown:
+    region: phx
+    geo_key: cbsa:38060
+    domain: housing
+    statement: >-
+      Slowing net in-migration to Maricopa and Pinal counties is weakening housing absorption.
+    confidence: 0.3
+    falsifiers:
+      - {indicator_id: net_migration, geo_key: "county:04013", operator: ">", threshold_rel: 1.25, by_months: 18, action: downgrade,
+         description: "Maricopa net migration rises 25% above the latest estimate"}
+      - {indicator_id: homes_sold, geo_key: "cbsa:38060", operator: ">", threshold_rel: 1.15, by_months: 12, action: review,
+         description: "metro home sales rise 15% within a year"}
+  jh-federal-land-wealth:
+    region: jh
+    geo_key: county:56039
+    domain: housing
+    statement: >-
+      With 97% of Teton County land federally owned, housing supply is fixed, so prices are set by wealth migration
+      rather than local incomes.
+    confidence: 0.4
+    falsifiers:
+      - {indicator_id: zhvi, geo_key: "zcta:83001", operator: "<", threshold_rel: 0.9, by_months: 12, action: review,
+         description: "Jackson home values fall 10% within a year"}
+      - {indicator_id: permits_total_units, geo_key: "county:56039", operator: ">", threshold_rel: 3.0, by_months: 12, action: review,
+         description: "county housing permits triple the seed month"}
+  jh-workforce-shed:
+    region: jh
+    geo_key: county:56039
+    domain: employment
+    statement: >-
+      The workforce-housing shortage pushes the Teton County labour shed over Teton Pass to Teton Valley, Idaho and
+      down the canyon to Alpine and Star Valley, making pass closures the acute operational risk for local employers.
+    confidence: 0.4
+    falsifiers:
+      - {indicator_id: qcew_employment_total, geo_key: "county:56023", operator: "<", threshold_rel: 0.93, by_months: 12, action: review,
+         description: "Lincoln County employment falls 7% within a year"}
+      - {indicator_id: unemployment_rate, geo_key: "county:56039", operator: ">", threshold_abs: 5.0, by_months: 12, action: review,
+         description: "Teton County unemployment exceeds 5% (labour shortage thesis weakens)"}
+  jh-str-lodging-lead:
+    region: jh
+    geo_key: county:56039
+    domain: tourism
+    statement: >-
+      Short-term-rental regulation and lodging-tax trends lead demand for local services in Teton County.
+    confidence: 0.3
+    falsifiers:
+      - {indicator_id: sales_use_tax_distribution, geo_key: "county:56039", operator: "<", threshold_rel: 0.85, by_months: 12, action: review,
+         description: "Teton County sales/use tax distribution falls 15% below the seed month"}
+  jh-airport-gtnp-lead:
+    region: jh
+    geo_key: county:56039
+    domain: tourism
+    statement: >-
+      Jackson Hole Airport enplanements and Grand Teton visitation lead Teton County lodging-tax collections by one to
+      three months.
+    confidence: 0.35
+    causal_edges:
+      - {cause: "grte_rec_visits", effect: "sales_use_tax_distribution", mechanism: "visitor volume drives taxable lodging and retail sales",
+         lag_months: 2, strength: moderate, cause_indicator: grte_rec_visits, effect_indicator: sales_use_tax_distribution, geo_key: "county:56039"}
+    falsifiers:
+      - {indicator_id: grte_rec_visits, geo_key: "county:56039", operator: "<", threshold_rel: 0.8, by_months: 12, action: review,
+         description: "Grand Teton visits fall 20% below the seed month"}
+  jh-property-tax-relief:
+    region: jh
+    geo_key: county:56039
+    domain: policy
+    statement: >-
+      Wyoming property-tax relief legislation reduces Teton County revenue growth and compresses assessed-value
+      increases, shifting fiscal pressure to sales and lodging taxes.
+    confidence: 0.3
+    falsifiers:
+      - {indicator_id: sales_use_tax_distribution, geo_key: "county:56039", operator: ">", threshold_rel: 1.2, by_months: 12, action: review,
+         description: "sales/use tax distribution rises 20% above the seed month"}

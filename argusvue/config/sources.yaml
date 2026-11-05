@@ -39,8 +39,7 @@ sources:
       files:
         metros:   housing_market/monthly/all_metros.csv      # 46 MB
         counties: housing_market/monthly/all_counties.csv    # 148 MB
-        zips:     housing_market/monthly/all_zips.csv        # 1.3 GB, stream
-        cities:   housing_market/monthly/all_cities.csv      # 1.1 GB, stream
+        # all_zips.csv (1.3 GB) and all_cities.csv (1.1 GB) carry only 'Rolling 3 Months' rows; see DECISIONS.
       index: index.json
       frequency_filter: Monthly
       columns:

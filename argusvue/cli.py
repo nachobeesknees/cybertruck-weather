@@ -21,6 +21,7 @@ reconcile_app = typer.Typer(no_args_is_help=True, help="Claim reconciliation")
 conflicts_app = typer.Typer(no_args_is_help=True, help="Contested claims")
 extract_app = typer.Typer(no_args_is_help=True, help="Claim extraction from documents")
 eval_app = typer.Typer(no_args_is_help=True, help="Evaluation harness")
+theses_app = typer.Typer(no_args_is_help=True, help="Theses: seed, list, show, review, approve, reject")
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
 app.add_typer(indicators_app, name="indicators")
@@ -31,6 +32,7 @@ app.add_typer(reconcile_app, name="reconcile")
 app.add_typer(conflicts_app, name="conflicts")
 app.add_typer(extract_app, name="extract")
 app.add_typer(eval_app, name="eval")
+app.add_typer(theses_app, name="theses")
 console = Console()
 
 
@@ -360,6 +362,82 @@ def conflicts_resolve(conflict_id: int = typer.Argument(...),
         execute(conn, "UPDATE conflicts SET resolved_at = now(), resolution = %s, notes = %s WHERE id = %s",
                 (resolution, note or None, conflict_id))
     console.print(f"conflict {conflict_id}: {resolution}")
+
+
+@theses_app.command("seed")
+def theses_seed(region: str = typer.Option(None, "--region")) -> None:
+    """Create the seed theses from config/theses_seed.yaml (idempotent)."""
+    from argusvue.agents.theses import seed
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(seed(conn, region_id=region))
+
+
+@theses_app.command("list")
+def theses_list(region: str = typer.Option(None, "--region")) -> None:
+    """Current (rendered) version of every thesis with status, confidence and the human gate state."""
+    from argusvue.agents.theses import current_versions
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        rows = current_versions(conn, region)
+    t = Table(title="theses")
+    for col in ("id", "slug", "geo", "domain", "status", "conf", "v", "human", "pending change"):
+        t.add_column(col)
+    for r in rows:
+        t.add_row(str(r["id"]), r["slug"], r["geo_key"], r["domain"], r["status"], f"{float(r['confidence']):.2f}",
+                  f"{r['rendered_version']}/{r['current_version']}", r["human_status"], "yes" if r["pending_human"] else "")
+    console.print(t)
+
+
+@theses_app.command("show")
+def theses_show(thesis_id: int = typer.Argument(...), version: int = typer.Option(None, "--version")) -> None:
+    """Full detail of a thesis version: statement, evidence, causal edges, falsifiers, decisions."""
+    from argusvue.agents.theses import version_detail
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        d = version_detail(conn, thesis_id, version)
+    t, v = d["thesis"], d["version"]
+    console.print(f"[bold]{t['slug']}[/bold] (#{t['id']}) {t['region_id']} {t['geo_key']} {t['domain']}  "
+                  f"current v{t['current_version']} approved v{t['approved_version']} human={t['human_status']}")
+    console.print(f"v{v['version']} [{v['status']}] confidence {float(v['confidence']):.2f}  ({v['critic_verdict']}, trigger={v['trigger']})")
+    console.print(v["statement"])
+    console.print(f"change: {v['change_summary']}")
+    console.print(f"reasoning: {v['confidence_reasoning']}")
+    for imp in v["implications"]:
+        console.print(f"  implication: {imp.get('text')} cites={imp.get('cites')} horizon={imp.get('horizon_months')}m" + (" [hypothesis]" if imp.get("hypothesis") else ""))
+    console.print(f"support: {[c['claim_id'] for c in d['claims'] if c['role'] == 'support']}  counter: {[c['claim_id'] for c in d['claims'] if c['role'] == 'counter']}")
+    for e in d["edges"]:
+        console.print(f"  edge: {e['cause']} -> {e['effect']} ({e['strength']}, lag {e['lag_months']}m, {e['status']}) {e['mechanism']}" + (f" test={e['test_result']}" if e["test_result"] else ""))
+    for f in d["falsifiers"]:
+        console.print(f"  falsifier #{f['id']}: {f['indicator_id']} @ {f['geo_key']} {f['operator']} {f['threshold']} by {f['by_date']} -> {f['action']}"
+                      f"  last={f['last_value']} triggered={f['last_triggered']} {('[' + f['outcome'] + ']') if f['outcome'] else ''}")
+    if v["known_disputes"]:
+        console.print(f"known disputes: {v['known_disputes']}")
+    for dec in d["decisions"]:
+        console.print(f"  human: v{dec['version']} {dec['decision']} {dec['decided_at']:%Y-%m-%d} {dec['note'] or ''}")
+
+
+@theses_app.command("approve")
+def theses_approve(thesis_id: int = typer.Argument(...), note: str = typer.Option("", "--note")) -> None:
+    """Human gate: approve the current version (required before a status change renders as current)."""
+    from argusvue.agents.theses import decide
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(decide(conn, thesis_id, "approved", note or None))
+
+
+@theses_app.command("reject")
+def theses_reject(thesis_id: int = typer.Argument(...), note: str = typer.Option("", "--note")) -> None:
+    """Human gate: reject the current version; the last approved version stays current."""
+    from argusvue.agents.theses import decide
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(decide(conn, thesis_id, "rejected", note or None))
 
 
 @scheduler_app.command("start")
