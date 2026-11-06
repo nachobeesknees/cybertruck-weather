@@ -43,6 +43,14 @@ def _indicator_key_ok(conn: psycopg.Connection, indicator_id: str, geo_key: str)
     return True, ""
 
 
+def _latest_period(conn: psycopg.Connection, indicator_id: str, geo_key: str, as_of) -> date | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT max(period) AS p FROM indicator_points WHERE indicator_id = %s AND geo_key = %s AND observed_at <= %s",
+                    (indicator_id, geo_key, as_of))
+        row = cur.fetchone()
+    return row["p"] if row else None
+
+
 def validate(conn: psycopg.Connection, packet: Packet, proposal: AnalystProposal, *, check_entailment: bool = True,
              client=None, store=None) -> Validation:
     v = Validation()
@@ -68,6 +76,15 @@ def validate(conn: psycopg.Connection, packet: Packet, proposal: AnalystProposal
                 v.errors.append(f"falsifier {i}: by_date {f.by_date} is not in the future")
         except ValueError:
             v.errors.append(f"falsifier {i}: by_date {f.by_date!r} is not a date")
+            continue
+        if f.period and ok:
+            target = date.fromisoformat(f.period + "-01")
+            if target > date.fromisoformat(f.by_date):
+                v.errors.append(f"falsifier {i}: period {f.period} is after by_date {f.by_date}")
+            latest = _latest_period(conn, f.indicator_id, f.geo_key, packet.as_of)
+            if latest is not None and target <= latest:
+                v.errors.append(f"falsifier {i}: period {f.period} is already observed (latest {latest.isoformat()}); "
+                                "a same-period test must name a future period")
     for i, e in enumerate(proposal.causal_edges):
         if e.cause_indicator or e.effect_indicator:
             for ind in (e.cause_indicator, e.effect_indicator):

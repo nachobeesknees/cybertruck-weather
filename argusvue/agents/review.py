@@ -87,6 +87,21 @@ def _critic_user(packet: Packet, proposal: AnalystProposal, validation: Validati
             f"SCHEMA:\n{json.dumps(CriticReview.model_json_schema())}")
 
 
+def _same_as_current(current: dict, proposal: AnalystProposal, status: str, confidence: float) -> bool:
+    """A re-run that reaches the gate with the version it started from must not write a duplicate (idempotent jobs)."""
+    def fal_key(f) -> tuple:
+        get = f.get if isinstance(f, dict) else lambda k, d=None: getattr(f, k, d)
+        return (get("indicator_id"), get("geo_key"), get("operator"), round(float(get("threshold")), 6), str(get("by_date"))[:10],
+                (str(get("period"))[:7] if get("period") else None))
+    return (current["statement"] == proposal.statement and current["status"] == status
+            and abs(float(current["confidence"]) - float(confidence)) < 1e-9
+            and sorted(current["support"]) == sorted(proposal.support) and sorted(current["counter"]) == sorted(proposal.counter)
+            and [i.get("text") for i in current["implications"]] == [i.text for i in proposal.implications]
+            and sorted(fal_key(f) for f in current["falsifiers"]) == sorted(fal_key(f) for f in proposal.falsifiers)
+            and sorted((e["cause"], e["effect"], e["strength"], int(e["lag_months"] or 0)) for e in current["causal_edges"])
+            == sorted((e.cause, e.effect, e.strength, int(e.lag_months or 0)) for e in proposal.causal_edges))
+
+
 def review_thesis(conn: psycopg.Connection, thesis_id: int, *, trigger: str = "manual", force: bool = False,
                   as_of: datetime | None = None, dry_run: bool = False, client=None, store: BlobStore | None = None) -> ReviewOutcome:
     store = store or BlobStore()
@@ -131,6 +146,17 @@ def review_thesis(conn: psycopg.Connection, thesis_id: int, *, trigger: str = "m
         proposal = res.parsed
         _event(conn, thesis_id, "analyst", {"round": round_no, "action": proposal.action, "status": proposal.status,
                                             "confidence": proposal.confidence}, run_id=res.run_id, dry_run=dry_run)
+        if proposal.action != "no_change" and _same_as_current(packet.current, proposal,
+                                                                "dead" if proposal.action == "retire" else proposal.status, proposal.confidence):
+            # a re-run that proposes the version it started from: idempotent, nothing to validate or write
+            out.proposal, out.stopped_at = proposal, "gate"
+            out.notes.append("proposal is identical to the current version; nothing written")
+            _event(conn, thesis_id, "gate", {"verdict": "unchanged", "unchanged": True, "round": round_no, "action": proposal.action}, dry_run=dry_run)
+            if not dry_run:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE theses SET last_reviewed_at = now() WHERE id = %s", (thesis_id,))
+                conn.commit()
+            return out
         validation = validate(conn, packet, proposal, client=client, store=store)
         if not validation.ok:   # re-prompt once with the error list
             res2 = llm.complete(conn, "analyst", system=prompt("analyst"), user=_analyst_user(packet, extra), schema=AnalystProposal,
@@ -202,6 +228,7 @@ def review_thesis(conn: psycopg.Connection, thesis_id: int, *, trigger: str = "m
              for e in proposal.causal_edges]
     fals = [{"indicator_id": f.indicator_id, "geo_key": f.geo_key, "operator": f.operator, "threshold": f.threshold,
              "by_date": date.fromisoformat(f.by_date), "action": f.action, "description": f.description,
+             "period": date.fromisoformat(f.period + "-01") if f.period else None,
              "baseline": {"set_by": "analyst", "run_id": out.run_ids[-1]}} for f in proposal.falsifiers]
     implications = [i.model_dump() for i in proposal.implications]
     version = T.write_version(conn, thesis_id, statement=proposal.statement, status=status, confidence=confidence,

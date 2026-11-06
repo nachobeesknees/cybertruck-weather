@@ -431,7 +431,8 @@ def theses_show(thesis_id: int = typer.Argument(...), version: int = typer.Optio
     for e in d["edges"]:
         console.print(f"  edge: {e['cause']} -> {e['effect']} ({e['strength']}, lag {e['lag_months']}m, {e['status']}) {e['mechanism']}" + (f" test={e['test_result']}" if e["test_result"] else ""))
     for f in d["falsifiers"]:
-        console.print(f"  falsifier #{f['id']}: {f['indicator_id']} @ {f['geo_key']} {f['operator']} {f['threshold']} by {f['by_date']} -> {f['action']}"
+        console.print(f"  falsifier #{f['id']}: {f['indicator_id']} @ {f['geo_key']} {f['operator']} {f['threshold']} by {f['by_date']}"
+                      f"{(' at ' + str(f['period'])[:7]) if f.get('period') else ''} -> {f['action']}"
                       f"  last={f['last_value']} triggered={f['last_triggered']} {('[' + f['outcome'] + ']') if f['outcome'] else ''}")
     if v["known_disputes"]:
         console.print(f"known disputes: {v['known_disputes']}")
@@ -569,16 +570,16 @@ def llm_carry_forward(role: str = typer.Option("analyst", "--role")) -> None:
     import json as _json
     import re as _re
 
-    from argusvue.llm import llm_dirs
+    from argusvue.llm import llm_dirs, request_round_key
 
     inbox, outbox = llm_dirs()
 
-    def thesis_of(req: dict) -> int | None:
+    def thesis_of(req: dict) -> tuple[int, str] | None:
         m = _re.search(r'"thesis":\s*\{\s*"id":\s*(\d+)', req.get("user", ""))
-        return int(m.group(1)) if m else None
+        return (int(m.group(1)), request_round_key(role, req.get("user", ""))) if m else None
 
-    answered: dict[int, tuple[float, str]] = {}
-    pending: list[tuple[int, str, dict]] = []
+    answered: dict[tuple[int, str], tuple[float, str]] = {}
+    pending: list[tuple[tuple[int, str], str, dict]] = []
     for p in inbox.glob("*.json"):
         try:
             req = _json.loads(p.read_text(encoding="utf-8"))
@@ -598,6 +599,7 @@ def llm_carry_forward(role: str = typer.Option("analyst", "--role")) -> None:
     copied = 0
     for tid, name, req in pending:
         if tid not in answered:
+            console.print(f"thesis {tid[0]}: no answered request of the same round; not carried")
             continue
         src = outbox / answered[tid][1]
         text = src.read_text(encoding="utf-8")
@@ -615,11 +617,11 @@ def llm_carry_forward(role: str = typer.Option("analyst", "--role")) -> None:
             cited |= {str(x) for x in imp.get("cites", []) if isinstance(x, int)}
         allow_c = set(_re.findall(r'"id":\s*(\d+)', req.get("user", "")))
         if cited - allow_c:
-            console.print(f"thesis {tid}: earlier answer cites claims outside the new packet {sorted(cited - allow_c)}; not carried")
+            console.print(f"thesis {tid[0]}: earlier answer cites claims outside the new packet {sorted(cited - allow_c)}; not carried")
             continue
         (outbox / name).write_text(text, encoding="utf-8")
         copied += 1
-        console.print(f"thesis {tid}: carried {answered[tid][1]} -> {name}")
+        console.print(f"thesis {tid[0]}: carried {answered[tid][1]} -> {name}")
     console.print(f"carried forward {copied} answer(s)")
 
 

@@ -284,3 +284,55 @@ def test_critic_packet_text_is_stable_across_validator_reruns():
     b = {**a, "run_id": 274}
     assert _entailment_line(a) == _entailment_line(b)
     assert "run_id" not in _entailment_line(a) and "251" not in _entailment_line(a)
+
+
+def test_validator_checks_falsifier_period(world):
+    conn, tid = world["conn"], world["tid"]
+    packet = build_packet(conn, tid)
+    base = {"indicator_id": "zhvi", "geo_key": "zcta:99001", "operator": "<", "threshold": 1, "by_date": "2027-12-31", "action": "review"}
+    v = validate(conn, packet, AnalystProposal.model_validate(_proposal(world, falsifiers=[{**base, "period": "2027-06"}])), check_entailment=False)
+    assert not [e for e in v.errors if "falsifier" in e]
+    v = validate(conn, packet, AnalystProposal.model_validate(_proposal(world, falsifiers=[{**base, "period": "2020-01"}])), check_entailment=False)
+    assert any("already observed" in e for e in v.errors)
+    v = validate(conn, packet, AnalystProposal.model_validate(_proposal(world, falsifiers=[{**base, "period": "2028-01"}])), check_entailment=False)
+    assert any("after by_date" in e for e in v.errors)
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        AnalystProposal.model_validate(_proposal(world, falsifiers=[{**base, "period": "2027-13"}]))
+
+
+def test_request_round_key_separates_rounds_and_ignores_schema_noise():
+    from argusvue.llm import request_round_key
+
+    r1 = "Review this thesis and return a proposal as JSON matching the schema.\n\n\nPACKET:\n{...}\n\nSCHEMA:\n{a}"
+    r2 = "Review this thesis and return a proposal as JSON matching the schema.\nThe critic asked for revisions. Apply these edits\n\nPACKET:\n{...}\n\nSCHEMA:\n{b}"
+    assert request_round_key("analyst", r1) != request_round_key("analyst", r2)
+    assert request_round_key("analyst", r1) == request_round_key("analyst", r1.replace("{a}", "{changed schema}"))
+    old = 'PROPOSAL:\n{"confidence": 0.3, "falsifiers": [{"indicator_id": "x", "threshold": 1}]}\n\nVALIDATOR FLAGS (code checks, informational):\n[]\n\nPACKET:\n...'
+    new = 'PROPOSAL:\n{"confidence": 0.3, "falsifiers": [{"indicator_id": "x", "threshold": 1, "period": null}]}\n\nVALIDATOR FLAGS (code checks, informational):\n[]\n\nPACKET:\n...'
+    other = old.replace("0.3", "0.4")
+    assert request_round_key("critic", old) == request_round_key("critic", new)
+    assert request_round_key("critic", old) != request_round_key("critic", other)
+
+
+def test_rerun_with_an_identical_proposal_writes_no_duplicate_version(world, tmp_path):
+    conn, tid = world["conn"], world["tid"]
+
+    def scripted():
+        client = ScriptedClient()
+        client.by_role["triage"] = [_resp({"material": True, "reason": "new claims"}, model_cls=TriageVerdict)]
+        client.by_role["analyst"] = [_resp(_proposal(world), model_cls=AnalystProposal)]
+        client.by_role["entailment"] = [_resp({"label": "entailed", "reason": "ok"}, model_cls=EntailmentVerdict)]
+        client.by_role["critic"] = [_resp(_critic("approve"), model_cls=CriticReview)]
+        return client
+
+    first = review_thesis(conn, tid, trigger="claims", client=scripted(), store=BlobStore(tmp_path))
+    assert first.version == 2
+    again = review_thesis(conn, tid, trigger="manual", force=True, client=scripted(), store=BlobStore(tmp_path))
+    assert again.stopped_at == "gate" and again.version is None
+    assert any("identical" in n for n in again.notes)
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM thesis_versions WHERE thesis_id = %s", (tid,))
+        assert cur.fetchone()["n"] == 2
+        cur.execute("SELECT payload FROM thesis_events WHERE thesis_id = %s AND kind = 'gate' ORDER BY id DESC LIMIT 1", (tid,))
+        assert cur.fetchone()["payload"]["unchanged"] is True

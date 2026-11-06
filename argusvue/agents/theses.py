@@ -145,10 +145,10 @@ def write_version(conn: psycopg.Connection, thesis_id: int, *, statement: str, s
             )
         for f in falsifiers:
             cur.execute(
-                """INSERT INTO falsifiers(thesis_id, version, indicator_id, geo_key, operator, threshold, by_date, action, description, baseline)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                """INSERT INTO falsifiers(thesis_id, version, indicator_id, geo_key, operator, threshold, by_date, action, description, baseline, period)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (thesis_id, version, f["indicator_id"], f["geo_key"], f["operator"], f["threshold"], f["by_date"], f["action"],
-                 f.get("description"), Jsonb(f.get("baseline") or {})),
+                 f.get("description"), Jsonb(f.get("baseline") or {}), f.get("period")),
             )
         status_changed = prev_status is not None and prev_status != status
         first = t["current_version"] == 0

@@ -56,6 +56,9 @@ class ProposedFalsifier(BaseModel):
     by_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     action: Literal["downgrade", "retire", "review"]
     description: str = ""
+    period: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$",
+                               description="YYYY-MM: test only the indicator point for this period (same month next year for a "
+                                           "seasonal series) instead of the latest point on every run.")
 
 
 class ProposedQuestion(BaseModel):

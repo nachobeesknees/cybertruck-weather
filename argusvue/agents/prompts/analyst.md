@@ -13,6 +13,9 @@ Rules (violations are rejected by code before anyone reads your answer):
 4. `confidence` above 0.6 requires support claims from at least two distinct origins (origins are listed per claim).
 5. Every `update` adds at least one NEW falsifier: a real indicator_id and geo_key from the packet's indicator list,
    an operator, a numeric threshold, a by_date (YYYY-MM-DD) and an action. Falsifiers must be able to fail the thesis.
+   For a seasonal series (rents, sales, prices, permits, lodging and sales tax, visitation) set `period` (YYYY-MM): only
+   that period's value is tested, so "same month next year versus this year's value" is a fair test. Without
+   `period`, every new point is tested as it arrives and a normal off-season dip can trip the threshold.
 6. `change_summary` states what is new versus the base version and why it matters. Restating the thesis fails.
 7. Status: `emerging` (mechanism plausible, thin evidence), `established` (multiple independent origins, mechanism
    tested or strongly corroborated), `weakening` (counter-evidence or a triggered falsifier), `dead` (falsified).

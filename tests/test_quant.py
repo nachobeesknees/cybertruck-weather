@@ -158,3 +158,28 @@ def test_run_quant_records_job(world):
     with conn.cursor() as cur:
         cur.execute("SELECT ok FROM job_runs WHERE job='quant.run'")
         assert cur.fetchone()["ok"] is True
+
+
+def test_falsifier_with_period_tests_only_that_period(world):
+    from datetime import date as _d
+    conn, ctx = world
+    ctx["add"]("a", [100.0] * 10, start=(2026, 1))                  # 2026-01..2026-10, flat at 100
+    ctx["add"]("a", [50.0], start=(2026, 11))                        # an off-season dip in 2026-11
+    tid = ctx["thesis"]()
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO falsifiers(thesis_id, version, indicator_id, geo_key, operator, threshold, by_date, action, period)
+                       VALUES (%s,1,'a',%s,'<',90,'2027-12-31','review','2027-10-01')""", (tid, GEO))
+        cur.execute("""INSERT INTO falsifiers(thesis_id, version, indicator_id, geo_key, operator, threshold, by_date, action, period)
+                       VALUES (%s,1,'a',%s,'<',90,'2026-12-31','review','2026-12-01')""", (tid, GEO))
+    conn.commit()
+    s = check_falsifiers(conn, "tst", today=_d(2026, 12, 5))
+    assert s["triggered"] == 0 and s["no_data"] == 2                  # the 2026-11 dip is ignored: not the target period
+    ctx["add"]("a", [80.0], start=(2027, 10))                        # the target month arrives, below the threshold
+    s = check_falsifiers(conn, "tst", today=_d(2027, 11, 5))
+    assert s["triggered"] == 1 and s["expired"] == 1                  # 2027-10 fires; 2026-12 never arrived and is past by_date
+    with conn.cursor() as cur:
+        cur.execute("SELECT period, outcome FROM falsifiers ORDER BY id")
+        rows = cur.fetchall()
+        assert rows[0]["outcome"] == "triggered" and rows[1]["outcome"] == "expired"
+        cur.execute("SELECT payload FROM thesis_events WHERE kind = 'falsifier_triggered'")
+        assert cur.fetchone()["payload"]["period"] == "2027-10-01"

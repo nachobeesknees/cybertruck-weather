@@ -217,6 +217,28 @@ def request_id_for(role: str, system: str, user: str) -> str:
     return hashlib.sha256(f"{role}\n{system}\n{user}".encode()).hexdigest()[:20]
 
 
+def _strip_nulls(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {k: _strip_nulls(v) for k, v in obj.items() if v is not None and k != "period"}
+    if isinstance(obj, list):
+        return [_strip_nulls(x) for x in obj]
+    return obj
+
+
+def request_round_key(role: str, user: str) -> str:
+    """What distinguishes rounds of the same thesis review: the text before the packet. For the analyst that is the
+    critic's requested edits (empty in round 1); for the critic it is the proposal under review, compared with null
+    fields and falsifier periods removed so a schema change does not look like a different proposal."""
+    head = user.split("PACKET:", 1)[0]
+    if role == "critic" and head.startswith("PROPOSAL:"):
+        body = head[len("PROPOSAL:"):].split("VALIDATOR FLAGS", 1)[0].strip()
+        try:
+            return json.dumps(_strip_nulls(json.loads(body)), sort_keys=True)
+        except ValueError:
+            return head
+    return head
+
+
 def _session_complete[T: BaseModel](conn, role, *, system, user_text, schema: type[T], region_id, geo_key, tools, effort,
                                      attempt, store: BlobStore) -> tuple[T | None, str, int, str | None]:
     """Session mode: returns (parsed, raw_text, run_id, error). Raises PendingAnswer when unanswered."""

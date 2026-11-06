@@ -23,11 +23,15 @@ def check_falsifiers(conn: psycopg.Connection, region_id: str | None = None, *, 
             {"r": region_id},
         )
         for f in cur.fetchall():
-            cur.execute(
-                """SELECT period, value FROM indicator_latest
-                   WHERE indicator_id = %s AND geo_key = %s AND period <= %s ORDER BY period DESC LIMIT 1""",
-                (f["indicator_id"], f["geo_key"], f["by_date"]),
-            )
+            if f["period"] is not None:   # same-period test: only that period's point counts
+                cur.execute("SELECT period, value FROM indicator_latest WHERE indicator_id = %s AND geo_key = %s AND period = %s",
+                            (f["indicator_id"], f["geo_key"], f["period"]))
+            else:
+                cur.execute(
+                    """SELECT period, value FROM indicator_latest
+                       WHERE indicator_id = %s AND geo_key = %s AND period <= %s ORDER BY period DESC LIMIT 1""",
+                    (f["indicator_id"], f["geo_key"], f["by_date"]),
+                )
             pt = cur.fetchone()
             triggered = False
             if pt is None:
@@ -39,7 +43,8 @@ def check_falsifiers(conn: psycopg.Connection, region_id: str | None = None, *, 
                 stats["checked"] += 1
             payload = {"falsifier_id": f["id"], "indicator_id": f["indicator_id"], "geo_key": f["geo_key"],
                        "value": float(pt["value"]) if pt else None, "threshold": float(f["threshold"]),
-                       "operator": f["operator"], "action": f["action"]}
+                       "operator": f["operator"], "action": f["action"],
+                       "period": f["period"].isoformat() if f["period"] else None}
             if triggered:
                 kind, outcome = "falsifier_triggered", "triggered"
             elif today > f["by_date"]:
