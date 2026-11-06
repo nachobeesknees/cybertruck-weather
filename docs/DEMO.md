@@ -88,3 +88,21 @@ uv run argusvue eval calibration
 uv run argusvue replay --as-of 2022-06-30 --thesis 5     # dry-run loop on evidence observed by then (needs ANTHROPIC_API_KEY)
 uv run argusvue scheduler start               # hourly due-monitor sweep, daily/weekly ingests (America/Phoenix)
 ```
+
+## Session mode — running the loop without an API key
+
+Set `LLM_PROVIDER=session` in `.env`. Every model call then becomes a request file instead of an HTTP call: the
+job writes `out/llm/inbox/<id>.json` (role, system prompt, packet, JSON schema) and raises "pending model answer"
+until `out/llm/outbox/<id>.json` exists with `{"answered_by": "<who>", "answer": {...}}`. Answers are validated,
+logged to `agent_runs` (model `session:<who>`, cost 0) and used exactly like API answers. The Claude Code session
+and its subagents answer the files (sonnet for extraction/entailment, opus for analyst/critic, the overseeing
+session for the editor), then the same commands are re-run.
+
+```bash
+uv run argusvue llm status                    # requests / answered / pending per role
+uv run argusvue llm pending --role critic     # what is waiting, with packet sizes
+uv run argusvue extract run --region phx      # first run writes requests, second run ingests the answers
+for id in 1 2 3 4 5 6 7 8 9 10 11; do uv run argusvue theses review $id --force; done
+uv run argusvue llm carry-forward --role analyst   # re-use an answer when its packet changed only cosmetically
+uv run argusvue intel --region phx            # editor request -> answer -> out/intel/<date>-phx.md
+```
