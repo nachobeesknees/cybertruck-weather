@@ -103,6 +103,7 @@ uv run argusvue llm status                    # requests / answered / pending pe
 uv run argusvue llm pending --role critic     # what is waiting, with packet sizes
 uv run argusvue extract run --region phx      # first run writes requests, second run ingests the answers
 for id in 1 2 3 4 5 6 7 8 9 10 11; do uv run argusvue theses review $id --force; done
-uv run argusvue llm carry-forward --role analyst   # re-use an answer when its packet changed only cosmetically
+uv run argusvue llm carry-forward --role analyst   # re-use a same-round answer when its packet drifted (sibling versions, schema)
+uv run argusvue llm carry-forward --role critic
 uv run argusvue intel --region phx            # editor request -> answer -> out/intel/<date>-phx.md
 ```
