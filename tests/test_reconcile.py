@@ -197,3 +197,31 @@ def test_stale_claims_use_sql_decay(ledger):
     r = next(r for r in rows if r["id"] == old)
     assert float(r["effective"]) == pytest.approx(0.7 * 0.5 ** (30 / 14), rel=0.02)
     assert decay.claim_effective_confidence(_get(conn, old)) == pytest.approx(float(r["effective"]), rel=0.02)
+
+
+def test_text_rules_same_document_fuzzy_and_free_text():
+    kw = {"new_valid_from": None, "new_valid_to": None, "old_valid_from": None, "old_valid_to": None, "new_num": None, "old_num": None,
+              "new_obj": None, "old_obj": None, "old_status": "asserted"}
+    # same document never contests
+    assert decide("housing.rules_amendment", new_text="Proposed: tighter rules", old_text="Proposed: income ranges", new_doc=5, old_doc=5, **kw).action == "ignore"
+    # near-identical wording across outlets corroborates
+    assert decide("policy.decision", new_text="EPA proposed approval", old_text="proposed approval by EPA", new_doc=1, old_doc=2, **kw).action == "corroborate"
+    # long free text under one predicate is distinct, not contradictory
+    assert decide("datacenter.status", new_text="roughly three dozen proposed facilities and half a dozen under construction",
+                  old_text="160 data centers in Arizona, 149 in Phoenix", new_doc=1, old_doc=2, **kw).action == "ignore"
+    # short categorical disagreement still contests
+    assert decide("project.status", new_text="cancelled", old_text="approved", new_doc=1, old_doc=2, **kw).action == "contest"
+
+
+def test_earlier_period_new_claim_is_superseded_not_contested(ledger):
+    conn, (da, db_), ent = ledger["conn"], ledger["docs"], ledger["entity"]
+    apr = _claim(conn, ent, da, "housing.months_supply", num=3.37, vf=date(2026, 4, 1))
+    feb = _claim(conn, ent, db_, "housing.months_supply", num=4.42, vf=date(2026, 2, 1))
+    reconcile_claim(conn, apr)
+    assert reconcile_claim(conn, feb) == "supersede"
+    rf, ra = _get(conn, feb), _get(conn, apr)
+    assert rf["status"] == "superseded" and rf["superseded_by"] == apr and rf["valid_to"] == date(2026, 3, 31)
+    assert ra["status"] == "asserted"
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM conflicts")
+        assert cur.fetchone()["n"] == 0

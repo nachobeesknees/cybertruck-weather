@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     exa_api_key: str | None = None
     daily_spend_cap_usd: float = 20.0
     timezone: str = "America/Phoenix"
+    # "api": call the Claude API with ANTHROPIC_API_KEY. "session": write each model request to
+    # out/llm/inbox/<id>.json and read the answer from out/llm/outbox/<id>.json (answered by the Claude Code
+    # session and its subagents). Validation, logging and citations are identical in both modes.
+    llm_provider: str = "api"
     # Structured sources fetch explicit publisher-linked URLs at the publisher's cadence; the web
     # collectors enforce robots.txt on discovered URLs. Set true to also disable the structured sources
     # whose host robots.txt disallows crawlers (flagged robots_disallowed in sources.yaml). See DECISIONS.

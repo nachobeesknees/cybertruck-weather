@@ -13,7 +13,11 @@ Output JSON matching the schema you are given. Rules:
    `role`; never a private individual), an instrument (ordinance, bill, permit, case number) or an event (closure, vote,
    hearing). Always give `place_hint` when the document says where it is.
 5. `valid_from` / `valid_to`: the period the fact holds (a decision date, a reporting month, a planned completion), if
-   stated. Otherwise leave them null; never guess.
+   stated. For a statistic that refers to a month, quarter or year, set both to that period's first and last day.
+   Otherwise leave them null; never guess.
+5b. When a figure refers to a segment (single-family, condo, land, a price tier, a neighbourhood), put the segment in
+   the predicate (`housing.inventory_condo`) or in `value_text`, so figures for different segments are not mistaken
+   for contradictions.
 6. `confidence` reflects how directly the excerpt states the fact (1.0 = stated outright with numbers; 0.6 = implied).
 7. Skip boilerplate, navigation, advertising, author bios and unrelated topics. If the document has no relevant facts,
    return an empty claims list and a one-line summary.

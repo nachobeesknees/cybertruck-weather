@@ -179,31 +179,22 @@ def extract_document(conn: psycopg.Connection, document_id: int, *, store: BlobS
     try:
         for offset, chunk in chunks(text):
             part = f"{header}\n--- DOCUMENT TEXT (characters {offset}-{offset + len(chunk)}) ---\n{chunk}\n--- END ---"
-            errors: list[str] = []
-            for attempt in (1, 2):
-                res = llm.complete(conn, "extraction", system=system, user=part, schema=Extraction, region_id=region_id,
-                                   store=store, client=client, max_tokens=12000, prior_errors=errors or None)
-                st.run_ids.append(res.run_id)
-                st.cost_usd += res.cost_usd
-                errors = []
-                st.proposed += len(res.parsed.claims)
-                for c in res.parsed.claims:
-                    problems = validate_claim(c)
-                    span = locate(chunk, c.excerpt)
-                    if span is None:
-                        problems.append(f"excerpt not found verbatim in the document: {c.excerpt[:80]!r}")
-                    if problems:
-                        for p in problems:
-                            st.reject(p.split(":")[0][:60])
-                        errors.extend(problems)
-                        continue
-                    accepted.append((c, offset + span[0], offset + span[1], text[offset + span[0]:offset + span[1]], res.parsed))
-                if not errors or attempt == 2:
-                    break
-                st.proposed -= 0  # second attempt replaces nothing; rejected counts stay for the audit
-                accepted = [a for a in accepted if a[4] is not res.parsed]  # drop this chunk's first-attempt claims
-                st.accepted = 0
-        claim_ids = write_claims(conn, doc, ctx, accepted, phash, client=client, store=store)
+            res = llm.complete(conn, "extraction", system=system, user=part, schema=Extraction, region_id=region_id,
+                               store=store, client=client, max_tokens=12000)
+            st.run_ids.append(res.run_id)
+            st.cost_usd += res.cost_usd
+            st.proposed += len(res.parsed.claims)
+            for c in res.parsed.claims:   # per-claim rejection (SPEC §6); the document is never re-asked for these
+                problems = validate_claim(c)
+                span = locate(chunk, c.excerpt)
+                if span is None:
+                    problems.append(f"excerpt not found verbatim in the document: {c.excerpt[:80]!r}")
+                if problems:
+                    for p in problems:
+                        st.reject(p.split(":")[0][:60])
+                    continue
+                accepted.append((c, offset + span[0], offset + span[1], text[offset + span[0]:offset + span[1]], res.parsed))
+        claim_ids = write_claims(conn, doc, ctx, accepted, phash, client=client, store=store, stats=st)
         st.claim_ids = claim_ids
         st.accepted = len(claim_ids)
         promote_candidates(conn, region_id)
@@ -213,6 +204,9 @@ def extract_document(conn: psycopg.Connection, document_id: int, *, store: BlobS
         st.status = "failed"
         st.reasons["spend_cap"] = 1
         _record(conn, document_id, phash, st)
+        raise
+    except llm.PendingAnswer:
+        conn.rollback()            # session mode: the request is in the inbox; nothing recorded yet
         raise
     except Exception as e:
         conn.rollback()
@@ -228,13 +222,47 @@ def _date(s: str | None) -> date | None:
     return date.fromisoformat(s) if s else None
 
 
-def write_claims(conn, doc: dict, ctx: IngestContext, accepted, phash: str, *, client=None, store=None) -> list[int]:
+def claim_geo_key(ctx: IngestContext, c: ExtractedClaim, extraction: Extraction, src_cfg: dict) -> str | None:
+    """Where a claim belongs. An explicit place hint that does not resolve inside the region means the fact
+    is about somewhere else: benchmark sources map it to national scope, anything else is dropped (None).
+    Without a hint, fall back to the document's main place, the monitor's geo scope, then the region CBSA."""
+    from argusvue.resolve.geocode import geocode_address, geocode_hint
+
+    if c.subject.address and (key := geocode_address(ctx, c.subject.address)):
+        return key
+    hint = c.subject.place_hint
+    tags = src_cfg.get("tags") or []
+    if hint:
+        if (key := geocode_hint(ctx, hint)):
+            return key
+        if (extraction.primary_geo_hint and geocode_hint(ctx, extraction.primary_geo_hint)) and _mentions_region(ctx, hint):
+            return geocode_hint(ctx, extraction.primary_geo_hint)
+        return "country:US" if "benchmark" in tags else None
+    for fb in (extraction.primary_geo_hint, src_cfg.get("geo_scope")):
+        if fb and (key := (fb if fb in ctx.geo_keys else geocode_hint(ctx, fb))):
+            return key
+    if "benchmark" in tags:
+        return "country:US"
+    return f"cbsa:{ctx.cbsa_code}" if ctx.cbsa_code else "country:US"
+
+
+def _mentions_region(ctx: IngestContext, hint: str) -> bool:
+    h = hint.lower()
+    names = [n.lower() for n in ctx.names.values() if n]
+    return any(n.split(" county")[0] in h or n.split(" city")[0] in h for n in names if len(n) > 4)
+
+
+def write_claims(conn, doc: dict, ctx: IngestContext, accepted, phash: str, *, client=None, store=None,
+                 stats: ExtractStats | None = None) -> list[int]:
     ids: list[int] = []
     origin = doc["origin_key"] or doc["source_slug"]
-    src_geo = (doc["source_config"] or {}).get("geo_scope")
+    src_cfg = doc["source_config"] or {}
     for c, start, end, excerpt, extraction in accepted:
-        geo_key = resolve_geo(ctx, place_hint=c.subject.place_hint, address=c.subject.address,
-                              fallbacks=[extraction.primary_geo_hint, src_geo])
+        geo_key = claim_geo_key(ctx, c, extraction, src_cfg)
+        if geo_key is None:
+            if stats is not None:
+                stats.reject("geo_out_of_region")
+            continue
         subj = resolve_entity(conn, c.subject, region_id=ctx.region_id, geo_key=geo_key, origin_key=origin, client=client, store=store)
         obj_id = None
         if c.object is not None:
@@ -286,11 +314,14 @@ def run_extract(conn: psycopg.Connection, *, region_id: str | None = None, limit
                 (region_id, region_id, force, phash, limit),
             )
             ids = [r["id"] for r in cur.fetchall()]
-        totals = {"documents": 0, "done": 0, "skipped": 0, "failed": 0, "proposed": 0, "accepted": 0, "rejected": 0,
-                  "cost_usd": 0.0, "prompt_hash": phash}
+        totals = {"documents": 0, "done": 0, "skipped": 0, "failed": 0, "pending": 0, "proposed": 0, "accepted": 0,
+                  "rejected": 0, "cost_usd": 0.0, "prompt_hash": phash}
         for did in ids:
             try:
                 st = extract_document(conn, did, store=store, client=client, force=force)
+            except llm.PendingAnswer:
+                totals["pending"] += 1
+                continue
             except llm.SpendCapExceeded:
                 totals["failed"] += 1
                 totals["stopped"] = "spend_cap"

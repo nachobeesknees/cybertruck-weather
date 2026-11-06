@@ -86,6 +86,9 @@ def review_thesis(conn: psycopg.Connection, thesis_id: int, *, trigger: str = "m
                   as_of: datetime | None = None, dry_run: bool = False, client=None, store: BlobStore | None = None) -> ReviewOutcome:
     store = store or BlobStore()
     out = ReviewOutcome(thesis_id=thesis_id, trigger=trigger, stopped_at="triage", dry_run=dry_run)
+    if as_of is None:   # a stable cutoff so re-runs within the day rebuild the same packet (session mode)
+        now = datetime.now(UTC)
+        as_of = now.replace(hour=23, minute=59, second=59, microsecond=0)
     packet = build_packet(conn, thesis_id, as_of=as_of)
     packet_ref = store.put_bytes(packet.to_prompt().encode(), suffix=".json").ref
     _event(conn, thesis_id, "packet", {"trigger": trigger, "packet_ref": packet_ref, "claims": len(packet.claims),
@@ -262,6 +265,9 @@ def review_due(conn: psycopg.Connection, region_id: str | None = None, *, client
         except llm.SpendCapExceeded as e:
             results.append({"thesis_id": t["id"], "error": str(e)})
             break
+        except llm.PendingAnswer as e:
+            results.append({"thesis_id": t["id"], "pending": e.request_id})
+            continue
         except Exception as e:  # keep reviewing the others; job_runs has the traceback
             log.exception("review of thesis %s failed", t["id"])
             results.append({"thesis_id": t["id"], "error": f"{type(e).__name__}: {e}"})

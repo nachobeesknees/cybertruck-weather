@@ -8,6 +8,7 @@ roles:
   scout:       claude-sonnet-5-5
   analyst:     claude-opus-5-5
   critic:      claude-opus-5-5
+  editor:      claude-opus-5-5
 # USD per million tokens. cache_write assumed 1.25x input where not published; adjust if the invoice differs.
 pricing:
   claude-haiku-5-5:  {input: 0.10, output: 0.50,  cache_read: 0.01, cache_write: 0.125}
@@ -23,3 +24,4 @@ effort:
   scout: medium
   analyst: high
   critic: high
+  editor: high

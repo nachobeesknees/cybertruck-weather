@@ -110,6 +110,14 @@ def run_monitor(conn: psycopg.Connection, monitor: MonitorConfig, *, fetcher: Fe
             run.stats.update(stats)
             return stats
         except Exception as e:
+            from argusvue.llm import PendingAnswer
+
+            if isinstance(e, PendingAnswer):
+                _ledger_update(conn, source_id, monitor.target, f"pending model answer {e.request_id}", monitor.cadence, 0, state)
+                conn.commit()
+                stats["pending"] = e.request_id
+                run.stats.update(stats)
+                return stats
             _ledger_update(conn, source_id, monitor.target, f"error: {type(e).__name__}: {e}", monitor.cadence, 0, state,
                            error=True)
             conn.commit()

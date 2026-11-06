@@ -15,6 +15,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -31,6 +32,15 @@ WEB_SEARCH_TOOL = "web_search_20260209"
 
 class LLMError(RuntimeError):
     """The model did not produce a usable answer after the allowed re-prompt."""
+
+
+class PendingAnswer(RuntimeError):
+    """Session mode: the request was written to the inbox and has no answer yet."""
+
+    def __init__(self, request_id: str, path: Path):
+        super().__init__(f"pending model answer {request_id} ({path})")
+        self.request_id = request_id
+        self.path = path
 
 
 class SpendCapExceeded(RuntimeError):
@@ -194,6 +204,57 @@ def _extract_json(text: str) -> Any:
         raise
 
 
+# ---- session provider ------------------------------------------------------------------------
+def llm_dirs() -> tuple[Path, Path]:
+    base = get_settings().out_dir / "llm"
+    inbox, outbox = base / "inbox", base / "outbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    outbox.mkdir(parents=True, exist_ok=True)
+    return inbox, outbox
+
+
+def request_id_for(role: str, system: str, user: str) -> str:
+    return hashlib.sha256(f"{role}\n{system}\n{user}".encode()).hexdigest()[:20]
+
+
+def _session_complete[T: BaseModel](conn, role, *, system, user_text, schema: type[T], region_id, geo_key, tools, effort,
+                                     attempt, store: BlobStore) -> tuple[T | None, str, int, str | None]:
+    """Session mode: returns (parsed, raw_text, run_id, error). Raises PendingAnswer when unanswered."""
+    inbox, outbox = llm_dirs()
+    rid = request_id_for(role, system, user_text)
+    req_path, ans_path = inbox / f"{rid}.json", outbox / f"{rid}.json"
+    if not req_path.exists():
+        req_path.write_text(json.dumps({"request_id": rid, "role": role, "model": model_for(role), "region_id": region_id,
+                                        "geo_key": geo_key, "attempt": attempt, "effort": effort, "tools": tools,
+                                        "schema": schema.model_json_schema(), "system": system, "user": user_text,
+                                        "created_at": datetime.now(ZoneInfo("UTC")).isoformat()}, indent=1, default=str),
+                            encoding="utf-8")
+    if not ans_path.exists():
+        raise PendingAnswer(rid, req_path)
+    raw_text = ans_path.read_text(encoding="utf-8")
+    phash = prompt_hash(system)
+    err = None
+    parsed = None
+    try:
+        data = _extract_json(raw_text)
+        if isinstance(data, dict) and "answer" in data and set(data) <= {"request_id", "answer", "answered_by", "notes"}:
+            data = data["answer"]
+        parsed = schema.model_validate(data)
+    except (ValidationError, ValueError, json.JSONDecodeError) as e:
+        err = f"{type(e).__name__}: {e}"
+    answered_by = "session"
+    try:
+        meta = json.loads(raw_text)
+        if isinstance(meta, dict) and meta.get("answered_by"):
+            answered_by = f"session:{meta['answered_by']}"
+    except (ValueError, TypeError):
+        pass
+    run_id = _log_run(conn, role=role, model=answered_by, phash=phash, region_id=region_id, geo_key=geo_key,
+                      input_ref=f"file://{req_path}", output_ref=f"file://{ans_path}", usage=Usage(), cost=0.0, latency_ms=0,
+                      ok=parsed is not None, error=err, attempt=attempt)
+    return parsed, raw_text, run_id, err
+
+
 def complete[T: BaseModel](conn: psycopg.Connection, role: str, *, system: str, user: str, schema: type[T],
              region_id: str | None = None, geo_key: str | None = None, max_tokens: int = 8000,
              effort: str | None = None, tools: list[dict] | None = None, store: BlobStore | None = None,
@@ -203,8 +264,25 @@ def complete[T: BaseModel](conn: psycopg.Connection, role: str, *, system: str, 
     Without `tools` the API's structured-output mode is used (schema enforced server-side; pydantic
     validators still run here). With server tools (web search), the model answers in text and the JSON
     is parsed here. Either way a validation failure re-prompts once with the errors, then raises LLMError.
+    In session mode (settings.llm_provider == "session") requests go through the file inbox/outbox instead.
     """
     model = model_for(role)
+    if client is None and get_settings().llm_provider == "session":
+        store = store or BlobStore()
+        effort = effort or effort_for(role)
+        errors: list[str] = list(prior_errors or [])
+        for attempt in (1, 2):
+            user_text = user if not errors else (
+                f"{user}\n\nYour previous answer failed validation with these errors; return a corrected answer:\n- "
+                + "\n- ".join(errors))
+            parsed, raw_text, run_id, err = _session_complete(conn, role, system=system, user_text=user_text, schema=schema,
+                                                               region_id=region_id, geo_key=geo_key, tools=tools, effort=effort,
+                                                               attempt=attempt, store=store)
+            if parsed is not None:
+                return LLMResult(parsed=parsed, run_id=run_id, model="session", usage=Usage(), cost_usd=0.0, latency_ms=0,
+                                 raw_text=raw_text, attempts=attempt)
+            errors = [err or "invalid output"]
+        raise LLMError(f"{role}: session answer failed validation twice; last error: {errors[-1]}")
     effort = effort or effort_for(role)
     client = client or get_client()
     store = store or BlobStore()

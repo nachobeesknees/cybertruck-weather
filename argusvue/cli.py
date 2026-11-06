@@ -22,6 +22,7 @@ conflicts_app = typer.Typer(no_args_is_help=True, help="Contested claims")
 extract_app = typer.Typer(no_args_is_help=True, help="Claim extraction from documents")
 eval_app = typer.Typer(no_args_is_help=True, help="Evaluation harness")
 theses_app = typer.Typer(no_args_is_help=True, help="Theses: seed, list, show, review, approve, reject")
+llm_app = typer.Typer(no_args_is_help=True, help="Model requests (session mode inbox/outbox)")
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
 app.add_typer(indicators_app, name="indicators")
@@ -33,6 +34,7 @@ app.add_typer(conflicts_app, name="conflicts")
 app.add_typer(extract_app, name="extract")
 app.add_typer(eval_app, name="eval")
 app.add_typer(theses_app, name="theses")
+app.add_typer(llm_app, name="llm")
 console = Console()
 
 
@@ -49,6 +51,13 @@ def db_migrate() -> None:
 
     with connection() as conn:
         applied = migrate(conn)
+        with conn.cursor() as cur:   # the materialised ancestry must exist whenever the gazetteer does
+            cur.execute("SELECT to_regclass('geo_ancestry') IS NOT NULL AS present")
+            if cur.fetchone()["present"]:
+                cur.execute("SELECT (SELECT count(*) FROM geo_ancestry) = 0 AND (SELECT count(*) FROM geo_units) > 0 AS stale")
+                if cur.fetchone()["stale"]:
+                    cur.execute("SELECT geo_ancestry_refresh() AS n")
+                    console.print(f"refreshed geo_ancestry ({cur.fetchone()['n']} rows)")
     if applied:
         for m in applied:
             console.print(f"applied {m.version:04d}_{m.name}")
@@ -338,6 +347,16 @@ def conflicts_list(region: str = typer.Option(None, "--region"), show_all: bool 
     console.print(t)
 
 
+@conflicts_app.command("recheck")
+def conflicts_recheck(region: str = typer.Option(None, "--region")) -> None:
+    """Re-run the decision table on open conflicts after a rules change; resolve the ones that no longer contest."""
+    from argusvue.reconcile.engine import recheck_conflicts
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        console.print(recheck_conflicts(conn, region_id=region))
+
+
 @conflicts_app.command("resolve")
 def conflicts_resolve(conflict_id: int = typer.Argument(...),
                       keep: str = typer.Option(..., "--keep", help="a | b | both | neither"),
@@ -496,6 +515,78 @@ def theses_reject(thesis_id: int = typer.Argument(...), note: str = typer.Option
 
     with connection() as conn:
         console.print(decide(conn, thesis_id, "rejected", note or None))
+
+
+@app.command("intel")
+def intel_cmd(region: str = typer.Option(..., "--region"), date_: str = typer.Option(None, "--date", help="YYYY-MM-DD as-of")) -> None:
+    """Narrative intelligence report (editor role) with every sentence cited; out/intel/<date>-<region>.md."""
+    from datetime import date
+
+    from argusvue.render.intel import render_intel
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        r = render_intel(conn, region, date.fromisoformat(date_) if date_ else None)
+    console.print(f"wrote {r.path}; dropped sentences: {len(r.dropped)}; stats: {r.stats}")
+
+
+@llm_app.command("pending")
+def llm_pending(role: str = typer.Option(None, "--role"), limit: int = typer.Option(50, "--limit"),
+                paths: bool = typer.Option(False, "--paths", help="Print one request path per line")) -> None:
+    """Session mode: model requests in out/llm/inbox without an answer in out/llm/outbox."""
+    import json as _json
+
+    from argusvue.llm import llm_dirs
+
+    inbox, outbox = llm_dirs()
+    rows = []
+    for p in sorted(inbox.glob("*.json"), key=lambda p: p.stat().st_mtime):
+        if (outbox / p.name).exists():
+            continue
+        try:
+            req = _json.loads(p.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if role and req.get("role") != role:
+            continue
+        rows.append((p, req))
+    if paths:
+        for p, _ in rows[:limit]:
+            console.print(str(p), markup=False)
+        return
+    t = Table(title=f"pending model requests ({len(rows)})")
+    for col in ("request", "role", "region", "attempt", "chars"):
+        t.add_column(col)
+    for p, req in rows[:limit]:
+        t.add_row(p.stem, req.get("role", ""), req.get("region_id") or "", str(req.get("attempt")), str(len(req.get("user", ""))))
+    console.print(t)
+
+
+@llm_app.command("status")
+def llm_status() -> None:
+    """Counts of requests and answers per role in session mode."""
+    import json as _json
+    from collections import Counter
+
+    from argusvue.llm import llm_dirs
+
+    inbox, outbox = llm_dirs()
+    reqs = Counter()
+    answered = Counter()
+    for p in inbox.glob("*.json"):
+        try:
+            role = _json.loads(p.read_text(encoding="utf-8")).get("role", "?")
+        except ValueError:
+            role = "?"
+        reqs[role] += 1
+        if (outbox / p.name).exists():
+            answered[role] += 1
+    t = Table(title="session-mode model requests")
+    for col in ("role", "requests", "answered", "pending"):
+        t.add_column(col)
+    for role in sorted(reqs):
+        t.add_row(role, str(reqs[role]), str(answered[role]), str(reqs[role] - answered[role]))
+    console.print(t)
 
 
 @scheduler_app.command("start")

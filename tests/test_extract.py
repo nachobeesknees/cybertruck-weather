@@ -132,12 +132,12 @@ def test_extract_document_end_to_end(web_doc):
         _claim(subject={"name": "Bob Smith", "type": "person"}, domain="policy", predicate="person.concern", value_text="traffic",
                value_num=None, unit=None, excerpt="Bob Smith, said he worried about traffic"),   # rejected: private person
     ]
-    # attempt 1 has two bad claims -> re-prompt once; attempt 2 returns only the good ones
-    client = FakeClient([_resp(_extraction(claims)), _resp(_extraction(claims[:4]))])
+    # two bad claims are rejected individually; the four valid ones are written from the single attempt
+    client = FakeClient([_resp(_extraction(claims))])
     st = extract_document(conn, did, store=store, client=client)
-    assert st.status == "done" and st.accepted == 4 and st.rejected >= 2
+    assert st.status == "done" and st.accepted == 4 and st.rejected == 2
     assert "excerpt not found verbatim in the document" in st.reasons and "person subjects must carry a public role (official or executive); private individuals are not recorded"[:60] in st.reasons
-    assert len(client.calls) == 2 and "failed validation" in client.calls[1]["messages"][0]["content"]
+    assert len(client.calls) == 1
     with conn.cursor() as cur:
         cur.execute("""SELECT c.*, e.canonical_name, e.type, e.status AS estatus FROM claims c JOIN entities e ON e.id = c.subject_entity
                        WHERE c.document_id = %s ORDER BY c.id""", (did,))
@@ -206,3 +206,20 @@ def test_resolver_exact_fuzzy_tie_and_promotion(synthetic, tmp_path):
                     (a.entity_id, d2))
     conn.commit()
     assert promote_candidates(conn, "tst") == 1
+
+
+def test_claim_geo_policy_out_of_region(synthetic):
+    from argusvue.extract.extractor import claim_geo_key
+    from argusvue.extract.schemas import Extraction
+
+    ctx = IngestContext(synthetic, IngestContext.load_region(synthetic, "tst"), "tst", False, {})
+    ex = Extraction(claims=[], document_summary="", primary_geo_hint="Testville")
+    local = ExtractedClaim.model_validate(_claim(subject={"name": "X", "type": "project", "place_hint": "Testville"}))
+    assert claim_geo_key(ctx, local, ex, {"tags": ["housing_market"]}) == "place:9900001"
+    away = ExtractedClaim.model_validate(_claim(subject={"name": "X", "type": "project", "place_hint": "Austin, TX"}))
+    assert claim_geo_key(ctx, away, ex, {"tags": ["data_centers"]}) is None
+    assert claim_geo_key(ctx, away, ex, {"tags": ["benchmark"]}) == "country:US"
+    nohint = ExtractedClaim.model_validate(_claim(subject={"name": "X", "type": "org"}))
+    assert claim_geo_key(ctx, nohint, ex, {"tags": ["policy"]}) == "place:9900001"       # document's main place
+    assert claim_geo_key(ctx, nohint, Extraction(claims=[], document_summary=""), {"tags": ["benchmark"]}) == "country:US"
+    assert claim_geo_key(ctx, nohint, Extraction(claims=[], document_summary=""), {"tags": ["policy"]}) == "cbsa:99999"

@@ -97,7 +97,7 @@ def reconcile_claim(conn: psycopg.Connection, claim_id: int, stats: ReconcileSta
         d = decide(new["predicate"], new_valid_from=new["valid_from"], new_valid_to=new["valid_to"], new_num=new["value_num"],
                    new_text=new["value_text"], new_obj=new["object_entity"], old_valid_from=old["valid_from"],
                    old_valid_to=old["valid_to"], old_num=old["value_num"], old_text=old["value_text"],
-                   old_obj=old["object_entity"], old_status=old["status"])
+                   old_obj=old["object_entity"], old_status=old["status"], new_doc=new["document_id"], old_doc=old["document_id"])
         if d.action == "ignore":
             continue
         if d.action in ("corroborate", "merge"):
@@ -134,6 +134,15 @@ def reconcile_claim(conn: psycopg.Connection, claim_id: int, stats: ReconcileSta
                     """UPDATE claims SET status = 'superseded', superseded_by = %s,
                                          valid_to = COALESCE(valid_to, %s) WHERE id = %s""",
                     (claim_id, (new["valid_from"] - timedelta(days=1)) if new["valid_from"] else None, old["id"]),
+                )
+            outcome = "supersede"
+            stats.superseded += 1
+        elif d.action == "supersede_new":   # the new claim is the older period: close it, the existing claim stays current
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE claims SET status = 'superseded', superseded_by = %s,
+                                         valid_to = COALESCE(valid_to, %s) WHERE id = %s""",
+                    (old["id"], (old["valid_from"] - timedelta(days=1)) if old["valid_from"] else None, claim_id),
                 )
             outcome = "supersede"
             stats.superseded += 1
@@ -181,3 +190,44 @@ def set_half_lives(conn: psycopg.Connection) -> int:
                         (half_life_for(p), p))
             n += cur.rowcount
     return n
+
+
+def recheck_conflicts(conn: psycopg.Connection, *, region_id: str | None = None) -> dict:
+    """Re-run the decision table on open conflicts (after a rules change). Pairs that no longer contest are
+    resolved: both_valid for distinct/agreeing facts (claims return to asserted), or a supersession."""
+    from argusvue.reconcile.rules import decide
+
+    with conn.cursor() as cur:
+        cur.execute("""SELECT k.id, k.claim_a, k.claim_b FROM conflicts k WHERE k.resolved_at IS NULL
+                       AND (%s::text IS NULL OR k.region_id = %s) ORDER BY k.id""", (region_id, region_id))
+        open_ = cur.fetchall()
+    out = {"checked": 0, "both_valid": 0, "superseded": 0, "still_open": 0}
+    for k in open_:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM claims WHERE id = %s", (k["claim_a"],))
+            a = cur.fetchone()
+            cur.execute("SELECT * FROM claims WHERE id = %s", (k["claim_b"],))
+            b = cur.fetchone()
+        d = decide(b["predicate"], new_valid_from=b["valid_from"], new_valid_to=b["valid_to"], new_num=b["value_num"], new_text=b["value_text"],
+                   new_obj=b["object_entity"], old_valid_from=a["valid_from"], old_valid_to=a["valid_to"], old_num=a["value_num"],
+                   old_text=a["value_text"], old_obj=a["object_entity"], old_status="asserted", new_doc=b["document_id"], old_doc=a["document_id"])
+        out["checked"] += 1
+        with conn.cursor() as cur:
+            if d.action == "contest":
+                out["still_open"] += 1
+                continue
+            if d.action in ("supersede", "supersede_new"):
+                loser, winner = (a, b) if d.action == "supersede" else (b, a)
+                cur.execute("""UPDATE claims SET status = 'superseded', superseded_by = %s, valid_to = COALESCE(valid_to, %s) WHERE id = %s""",
+                            (winner["id"], (winner["valid_from"] - timedelta(days=1)) if winner["valid_from"] else None, loser["id"]))
+                cur.execute("UPDATE claims SET status = 'asserted' WHERE id = %s AND status = 'contested'", (winner["id"],))
+                resolution = "keep_b" if winner["id"] == b["id"] else "keep_a"
+                out["superseded"] += 1
+            else:
+                cur.execute("UPDATE claims SET status = 'asserted' WHERE id = ANY(%s) AND status = 'contested'", ([a["id"], b["id"]],))
+                resolution = "both_valid"
+                out["both_valid"] += 1
+            cur.execute("UPDATE conflicts SET resolved_at = now(), resolution = %s, notes = %s WHERE id = %s",
+                        (resolution, f"recheck: {d.reason}", k["id"]))
+    conn.commit()
+    return out
