@@ -76,9 +76,14 @@ def _analyst_user(packet: Packet, extra: str = "") -> str:
             f"SCHEMA:\n{json.dumps(AnalystProposal.model_json_schema())}")
 
 
+def _entailment_line(e: dict) -> str:
+    """Stable text for the critic packet: no run ids, so re-running the validator never changes the critic request."""
+    return f"entailment check, implication {e['implication']}: {e['label']} ({e['reason']})"
+
+
 def _critic_user(packet: Packet, proposal: AnalystProposal, validation: Validation) -> str:
     return (f"PROPOSAL:\n{proposal.model_dump_json(indent=1)}\n\nVALIDATOR FLAGS (code checks, informational):\n"
-            f"{json.dumps(validation.flags + [str(e) for e in validation.entailment])}\n\nPACKET:\n{packet.to_prompt()}\n\n"
+            f"{json.dumps(validation.flags + [_entailment_line(e) for e in validation.entailment])}\n\nPACKET:\n{packet.to_prompt()}\n\n"
             f"SCHEMA:\n{json.dumps(CriticReview.model_json_schema())}")
 
 

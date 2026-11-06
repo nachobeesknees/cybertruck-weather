@@ -273,3 +273,14 @@ def test_due_theses_triggers(world):
     conn, tid = world["conn"], world["tid"]
     due = due_theses(conn, "tst")
     assert due and due[0]["id"] == tid and "claims_due" in due[0]["reasons"]
+
+
+def test_critic_packet_text_is_stable_across_validator_reruns():
+    """The critic request must not change when the validator is re-run (run ids differ every time),
+    otherwise session-mode request ids drift and answered reviews are lost."""
+    from argusvue.agents.review import _entailment_line
+
+    a = {"implication": 0, "label": "neutral", "reason": "says nothing about supply", "run_id": 251}
+    b = {**a, "run_id": 274}
+    assert _entailment_line(a) == _entailment_line(b)
+    assert "run_id" not in _entailment_line(a) and "251" not in _entailment_line(a)
