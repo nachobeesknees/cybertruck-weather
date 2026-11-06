@@ -183,3 +183,24 @@ def test_falsifier_with_period_tests_only_that_period(world):
         assert rows[0]["outcome"] == "triggered" and rows[1]["outcome"] == "expired"
         cur.execute("SELECT payload FROM thesis_events WHERE kind = 'falsifier_triggered'")
         assert cur.fetchone()["payload"]["period"] == "2027-10-01"
+
+
+def test_same_period_falsifier_waits_for_publication(world):
+    from datetime import date as _d
+
+    from argusvue.quant.falsifiers import deadline_for, month_end
+
+    assert month_end(_d(2027, 6, 1)) == _d(2027, 6, 30) and month_end(_d(2027, 11, 1), 3) == _d(2028, 2, 29)
+    assert deadline_for(_d(2027, 6, 30), _d(2027, 6, 1)) == _d(2027, 9, 30) and deadline_for(_d(2027, 6, 30), None) == _d(2027, 6, 30)
+    conn, ctx = world
+    ctx["add"]("a", [100.0] * 5, start=(2027, 1))                    # January to May: the June point is not in yet
+    tid = ctx["thesis"]()
+    with conn.cursor() as cur:   # by_date at the end of the target month: the June point is published in July
+        cur.execute("""INSERT INTO falsifiers(thesis_id, version, indicator_id, geo_key, operator, threshold, by_date, action, period)
+                       VALUES (%s,1,'a',%s,'<',90,'2027-06-30','review','2027-06-01')""", (tid, GEO))
+    conn.commit()
+    s = check_falsifiers(conn, "tst", today=_d(2027, 7, 15))
+    assert s["expired"] == 0 and s["no_data"] == 1                   # not expired: inside the publication grace
+    ctx["add"]("a", [80.0], start=(2027, 6))
+    s = check_falsifiers(conn, "tst", today=_d(2027, 7, 20))
+    assert s["triggered"] == 1

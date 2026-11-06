@@ -13,6 +13,7 @@ import psycopg
 from argusvue import llm
 from argusvue.agents.packet import Packet
 from argusvue.agents.schemas import AnalystProposal, EntailmentVerdict
+from argusvue.quant.falsifiers import month_end
 from argusvue.settings import PACKAGE_ROOT
 
 ENTAILMENT_PROMPT = PACKAGE_ROOT / "agents" / "prompts" / "entailment.md"
@@ -81,6 +82,9 @@ def validate(conn: psycopg.Connection, packet: Packet, proposal: AnalystProposal
             target = date.fromisoformat(f.period + "-01")
             if target > date.fromisoformat(f.by_date):
                 v.errors.append(f"falsifier {i}: period {f.period} is after by_date {f.by_date}")
+            elif date.fromisoformat(f.by_date) < month_end(target, 1):
+                v.errors.append(f"falsifier {i}: by_date {f.by_date} leaves no time for the {f.period} value to be published; "
+                                f"use {month_end(target, 1).isoformat()} or later")
             latest = _latest_period(conn, f.indicator_id, f.geo_key, packet.as_of)
             if latest is not None and target <= latest:
                 v.errors.append(f"falsifier {i}: period {f.period} is already observed (latest {latest.isoformat()}); "

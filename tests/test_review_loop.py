@@ -296,6 +296,8 @@ def test_validator_checks_falsifier_period(world):
     assert any("already observed" in e for e in v.errors)
     v = validate(conn, packet, AnalystProposal.model_validate(_proposal(world, falsifiers=[{**base, "period": "2028-01"}])), check_entailment=False)
     assert any("after by_date" in e for e in v.errors)
+    v = validate(conn, packet, AnalystProposal.model_validate(_proposal(world, falsifiers=[{**base, "period": "2027-12"}])), check_entailment=False)
+    assert any("no time for the 2027-12 value" in e and "2028-01-31" in e for e in v.errors)
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         AnalystProposal.model_validate(_proposal(world, falsifiers=[{**base, "period": "2027-13"}]))
