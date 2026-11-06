@@ -562,6 +562,67 @@ def llm_pending(role: str = typer.Option(None, "--role"), limit: int = typer.Opt
     console.print(t)
 
 
+@llm_app.command("carry-forward")
+def llm_carry_forward(role: str = typer.Option("analyst", "--role")) -> None:
+    """Session mode: when a packet drifts (ids change) but an earlier answer for the same thesis and role exists,
+    copy that answer to the new request id if everything it cites is still in the new allowlist."""
+    import json as _json
+    import re as _re
+
+    from argusvue.llm import llm_dirs
+
+    inbox, outbox = llm_dirs()
+
+    def thesis_of(req: dict) -> int | None:
+        m = _re.search(r'"thesis":\s*\{\s*"id":\s*(\d+)', req.get("user", ""))
+        return int(m.group(1)) if m else None
+
+    answered: dict[int, tuple[float, str]] = {}
+    pending: list[tuple[int, str, dict]] = []
+    for p in inbox.glob("*.json"):
+        try:
+            req = _json.loads(p.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if req.get("role") != role:
+            continue
+        tid = thesis_of(req)
+        if tid is None:
+            continue
+        ans = outbox / p.name
+        if ans.exists():
+            if tid not in answered or ans.stat().st_mtime > answered[tid][0]:
+                answered[tid] = (ans.stat().st_mtime, p.name)
+        else:
+            pending.append((tid, p.name, req))
+    copied = 0
+    for tid, name, req in pending:
+        if tid not in answered:
+            continue
+        src = outbox / answered[tid][1]
+        text = src.read_text(encoding="utf-8")
+        try:
+            ans = _json.loads(text)
+            ans = ans.get("answer", ans) if isinstance(ans, dict) else {}
+        except ValueError:
+            continue
+        cited: set[str] = set()
+        for key in ("support", "counter"):
+            cited |= {str(x) for x in ans.get(key, []) if isinstance(x, int)}
+        for e in ans.get("causal_edges", []):
+            cited |= {str(x) for x in e.get("evidence", []) if isinstance(x, int)}
+        for imp in ans.get("implications", []):
+            cited |= {str(x) for x in imp.get("cites", []) if isinstance(x, int)}
+        allow_c = set(_re.findall(r'"id":\s*(\d+)', req.get("user", "")))
+        if cited - allow_c:
+            console.print(f"thesis {tid}: earlier answer cites claims outside the new packet {sorted(cited - allow_c)}; not carried")
+            continue
+        (outbox / name).write_text(text, encoding="utf-8")
+        copied += 1
+        console.print(f"thesis {tid}: carried {answered[tid][1]} -> {name}")
+    console.print(f"carried forward {copied} answer(s)")
+
+
 @llm_app.command("status")
 def llm_status() -> None:
     """Counts of requests and answers per role in session mode."""

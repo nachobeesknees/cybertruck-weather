@@ -18,12 +18,30 @@ log = logging.getLogger(__name__)
 _ZIP = re.compile(r"\b(\d{5})(?:-\d{4})?\b")
 _COUNTY = re.compile(r"\b([A-Za-z .'-]+?)\s+County\b", re.IGNORECASE)
 _STATE_SUFFIX = re.compile(r",\s*([A-Za-z]{2}|Arizona|Wyoming|Idaho)\.?$|\s+(AZ|WY|ID|Arizona|Wyoming|Idaho)\.?$", re.IGNORECASE)
+_STATE_NAMES = {"arizona": "AZ", "wyoming": "WY", "idaho": "ID"}
+
+
+def _state_in_hint(hint: str) -> str | None:
+    """USPS code named in the hint ('Teton County, WY', 'Driggs, Idaho'), else None."""
+    m = _STATE_SUFFIX.search(hint.strip())
+    if m:
+        tok = (m.group(1) or m.group(2) or "").lower()
+        return _STATE_NAMES.get(tok, tok.upper() if len(tok) == 2 else None)
+    low = hint.lower()
+    for name, code in _STATE_NAMES.items():
+        if name in low:
+            return code
+    return None
 _PREFIX = re.compile(r"^(the\s+)?(city|town|village)\s+of\s+", re.IGNORECASE)
 GEOCODER = "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress"
 
 
-def _state_usps_list(ctx: IngestContext) -> list[str]:
-    return [USPS_BY_FIPS[s] for s in ctx.state_fips if s in USPS_BY_FIPS]
+def _state_usps_list(ctx: IngestContext, hint: str | None = None) -> list[str]:
+    """States to try, in order: the state the hint names (only that one), else the region's states with the
+    CBSA's central state first. Prevents 'Teton County' in a Wyoming document resolving to Teton County, Idaho."""
+    region_states = [USPS_BY_FIPS[s] for s in ctx.state_fips if s in USPS_BY_FIPS]
+    named = _state_in_hint(hint) if hint else None
+    return [named] if named else region_states
 
 
 def geocode_hint(ctx: IngestContext, hint: str | None) -> str | None:
@@ -36,11 +54,11 @@ def geocode_hint(ctx: IngestContext, hint: str | None) -> str | None:
         return key
     if (m := _COUNTY.search(h)):
         name = f"{m.group(1).strip()} County"
-        for st in _state_usps_list(ctx):
+        for st in _state_usps_list(ctx, h):
             if (key := ctx.county_by_name(name, st)):
                 return key
     name = _PREFIX.sub("", _STATE_SUFFIX.sub("", h)).strip(" ,.")
-    for st in _state_usps_list(ctx):
+    for st in _state_usps_list(ctx, h):
         if (key := ctx.place_by_name(name, st)):
             return key
     # submarket by id-ish name ("north phoenix", "teton village")

@@ -42,7 +42,7 @@ class Packet:
     def to_prompt(self) -> str:
         return json.dumps({
             "thesis": self.current, "delta": self.delta, "family": self.family, "leading_indicators": self.leading,
-            "claims_allowlist": list(self.claims.values()), "indicators_allowlist": self.indicators,
+            "claims_allowlist": [self.claims[k] for k in sorted(self.claims)], "indicators_allowlist": self.indicators,
             "as_of": self.as_of.isoformat(), "last_reviewed_at": self.last_reviewed_at.isoformat() if self.last_reviewed_at else None,
             "notes": self.notes,
         }, default=str, indent=1)
@@ -115,7 +115,7 @@ def build_packet(conn: psycopg.Connection, thesis_id: int, *, as_of: datetime | 
               AND c.extractor_version LIKE 'extract@%%'
               AND EXISTS (SELECT 1 FROM claim_geo g WHERE g.claim_id = c.id AND g.geo_key = %s)
               AND (c.attrs->>'domain' = %s OR %s = 'housing' AND c.attrs->>'domain' IN ('housing','policy'))
-            ORDER BY c.observed_at DESC LIMIT %s""",
+            ORDER BY c.observed_at DESC, c.id DESC LIMIT %s""",
             (as_of, t["geo_key"], t["domain"], t["domain"], MAX_CLAIMS),
         )
         for r in cur.fetchall():
@@ -125,7 +125,7 @@ def build_packet(conn: psycopg.Connection, thesis_id: int, *, as_of: datetime | 
                 _CLAIM_SELECT + """
                 WHERE c.observed_at <= %s AND c.status NOT IN ('retracted','superseded') AND c.extractor_version LIKE 'extract@%%'
                   AND EXISTS (SELECT 1 FROM claim_geo g WHERE g.claim_id = c.id AND g.geo_key = %s)
-                  AND c.attrs->>'domain' = %s ORDER BY c.observed_at DESC LIMIT %s""",
+                  AND c.attrs->>'domain' = %s ORDER BY c.observed_at DESC, c.id DESC LIMIT %s""",
                 (as_of, region_cbsa, t["domain"], MAX_CLAIMS - len(claims)),
             )
             for r in cur.fetchall():
@@ -133,13 +133,13 @@ def build_packet(conn: psycopg.Connection, thesis_id: int, *, as_of: datetime | 
 
         # --- delta since last review
         new_claims = [c for c in claims.values() if datetime.fromisoformat(c["observed"]).replace(tzinfo=UTC) > last_reviewed - timedelta(days=1)]
-        cur.execute("""SELECT c.id, c.predicate, c.superseded_by FROM claims c WHERE c.id = ANY(%s) AND c.status = 'superseded'""",
+        cur.execute("""SELECT c.id, c.predicate, c.superseded_by FROM claims c WHERE c.id = ANY(%s) AND c.status = 'superseded' ORDER BY c.id""",
                     (cited_ids or [0],))
         superseded = cur.fetchall()
         cur.execute("""SELECT k.id, k.claim_a, k.claim_b, k.kind, k.resolution, k.resolved_at FROM conflicts k
                        WHERE k.resolved_at BETWEEN %s AND %s AND (k.claim_a = ANY(%s) OR k.claim_b = ANY(%s) OR k.geo_key = %s)""",
                     (last_reviewed, as_of, list(claims) or [0], list(claims) or [0], t["geo_key"]))
-        resolved_conflicts = cur.fetchall()
+        resolved_conflicts = sorted(cur.fetchall(), key=lambda r: r["id"])
         geo_scope = [t["geo_key"]] + ([region_cbsa] if region_cbsa and region_cbsa != t["geo_key"] else [])
         cur.execute("""SELECT DISTINCT ON (a.indicator_id, a.geo_key) a.indicator_id, a.geo_key, a.period, a.value, a.zscore, a.yoy_pct, a.mom_pct
                        FROM indicator_anomalies a WHERE a.geo_key = ANY(%s) AND a.computed_at <= %s
@@ -170,7 +170,8 @@ def build_packet(conn: psycopg.Connection, thesis_id: int, *, as_of: datetime | 
         cur.execute("""SELECT t2.id, t2.slug, t2.geo_key, t2.domain, v2.statement, v2.status, v2.confidence
                        FROM theses t2 JOIN LATERAL (SELECT * FROM thesis_versions x WHERE x.thesis_id = t2.id AND x.created_at <= %s
                                                     ORDER BY version DESC LIMIT 1) v2 ON true
-                       WHERE t2.region_id = %s AND t2.id <> %s AND t2.active AND (t2.domain = %s OR t2.geo_key = %s)""",
+                       WHERE t2.region_id = %s AND t2.id <> %s AND t2.active AND (t2.domain = %s OR t2.geo_key = %s)
+                       ORDER BY t2.id""",
                     (as_of, t["region_id"], thesis_id, t["domain"], t["geo_key"]))
         family = [dict(r) | {"confidence": float(r["confidence"])} for r in cur.fetchall()]
         leading = [{"cause": e["cause"], "effect": e["effect"], "lag_months": e["lag_months"], "status": e["status"],
@@ -184,7 +185,7 @@ def build_packet(conn: psycopg.Connection, thesis_id: int, *, as_of: datetime | 
                "causal_edges": [dict(e) for e in edges],
                "falsifiers": [{k: (v2.isoformat() if hasattr(v2, "isoformat") else v2) for k, v2 in dict(f).items()} for f in fals],
                "human_status": t["human_status"]}
-    delta = {"new_claims": [c["id"] for c in new_claims], "superseded_cited_claims": [dict(r) for r in superseded],
+    delta = {"new_claims": sorted(c["id"] for c in new_claims), "superseded_cited_claims": [dict(r) for r in superseded],
              "resolved_conflicts": [dict(r) for r in resolved_conflicts], "indicator_moves": anomalies,
              "falsifiers_triggered": falsifier_events}
     notes = []

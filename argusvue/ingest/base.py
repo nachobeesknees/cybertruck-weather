@@ -167,7 +167,8 @@ class RegionInfo:
 
     @property
     def states(self) -> list[str]:
-        return sorted({c[:2] for c in self.counties})
+        """State FIPS in county order: the CBSA's central county's state comes first (resolution default)."""
+        return list(dict.fromkeys(c[:2] for c in self.counties))
 
 
 class IngestContext:

@@ -223,3 +223,29 @@ def test_claim_geo_policy_out_of_region(synthetic):
     assert claim_geo_key(ctx, nohint, ex, {"tags": ["policy"]}) == "place:9900001"       # document's main place
     assert claim_geo_key(ctx, nohint, Extraction(claims=[], document_summary=""), {"tags": ["benchmark"]}) == "country:US"
     assert claim_geo_key(ctx, nohint, Extraction(claims=[], document_summary=""), {"tags": ["policy"]}) == "cbsa:99999"
+
+
+def test_geocode_prefers_named_state_then_central_state():
+    from argusvue.resolve.geocode import geocode_hint
+
+    class Ctx:
+        def __init__(self):
+            self.state_fips = ["56", "16"]                      # jh: Teton WY (central) before Teton ID
+            self.geo_keys = {"county:56039", "county:16081", "place:5640120"}
+            self.counties = {("56", "teton county"): "county:56039", ("16", "teton county"): "county:16081"}
+
+        def zcta(self, c):
+            return None
+
+        def county_by_name(self, name, st):
+            fips = {"WY": "56", "ID": "16"}.get(st)
+            return self.counties.get((fips, name.lower()))
+
+        def place_by_name(self, name, st):
+            return "place:5640120" if (name.lower(), st) == ("jackson", "WY") else None
+
+    ctx = Ctx()
+    assert geocode_hint(ctx, "Teton County, WY") == "county:56039"
+    assert geocode_hint(ctx, "Teton County, Idaho") == "county:16081"
+    assert geocode_hint(ctx, "Teton County") == "county:56039"          # region default: central state
+    assert geocode_hint(ctx, "Jackson, Wyoming") == "place:5640120"
