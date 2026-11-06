@@ -100,7 +100,7 @@ def build_editor_packet(ctx: Ctx) -> EditorPacket:
                  AND (%(cut)s::timestamptz IS NULL OR c.observed_at <= %(cut)s)
                  AND c.observed_at > coalesce(%(cut)s, now()) - make_interval(days => %(days)s)
                  AND EXISTS (SELECT 1 FROM claim_geo g JOIN geo_units u ON u.geo_key = g.geo_key WHERE g.claim_id = c.id AND u.region_id = %(r)s)
-               ORDER BY c.confidence DESC, c.observed_at DESC LIMIT %(n)s""",
+               ORDER BY c.confidence DESC, c.observed_at DESC, c.id DESC LIMIT %(n)s""",
             {"cut": cut, "days": RECENT_DAYS, "r": ctx.region_id, "n": MAX_CLAIMS},
         )
         claims = [dict(r) | {"confidence": float(r["confidence"])} for r in cur.fetchall()]
@@ -108,7 +108,7 @@ def build_editor_packet(ctx: Ctx) -> EditorPacket:
             """SELECT k.id, k.kind, k.claim_a, k.claim_b, a.predicate, coalesce(a.value_text, a.value_num::text) AS value_a,
                       coalesce(b.value_text, b.value_num::text) AS value_b, k.opened_at::date AS opened
                FROM conflicts k JOIN claims a ON a.id = k.claim_a JOIN claims b ON b.id = k.claim_b
-               WHERE k.region_id = %s AND k.resolved_at IS NULL AND (%s::timestamptz IS NULL OR k.opened_at <= %s) ORDER BY k.opened_at DESC LIMIT 20""",
+               WHERE k.region_id = %s AND k.resolved_at IS NULL AND (%s::timestamptz IS NULL OR k.opened_at <= %s) ORDER BY k.opened_at DESC, k.id DESC LIMIT 20""",
             (ctx.region_id, cut, cut),
         )
         conflicts = [dict(r) for r in cur.fetchall()]
