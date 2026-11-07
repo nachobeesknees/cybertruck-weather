@@ -518,6 +518,19 @@ def theses_reject(thesis_id: int = typer.Argument(...), note: str = typer.Option
         console.print(decide(conn, thesis_id, "rejected", note or None))
 
 
+@app.command("intel-html")
+def intel_html_cmd(date_: str = typer.Option(..., "--date", help="YYYY-MM-DD of the intel reports to present")) -> None:
+    """Readable briefing page for both regions from out/intel/<date>-<region>.md; writes out/intel/index.html."""
+    from datetime import date as _date
+
+    from argusvue.render.html import render_html
+    from argusvue.store.db import connection
+
+    with connection() as conn:
+        path = render_html(conn, _date.fromisoformat(date_))
+    console.print(f"wrote {path}")
+
+
 @app.command("intel")
 def intel_cmd(region: str = typer.Option(..., "--region"), date_: str = typer.Option(None, "--date", help="YYYY-MM-DD as-of")) -> None:
     """Narrative intelligence report (editor role) with every sentence cited; out/intel/<date>-<region>.md."""
